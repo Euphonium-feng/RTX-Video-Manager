@@ -365,8 +365,8 @@ fn main() {
 }
 
 unsafe fn run() -> i32 {
-    let background = std::env::args_os()
-        .any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--background"));
+    let background =
+        std::env::args_os().any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--background"));
     let instance = GetModuleHandleW(null());
     let taskbar_created_message =
         wm::RegisterWindowMessageW(wide(TASKBAR_CREATED_MESSAGE).as_ptr());
