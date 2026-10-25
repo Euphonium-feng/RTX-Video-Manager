@@ -43,7 +43,8 @@ active, or falling back to Windows HDR.
 Show a small native Win32 popup at the bottom center of the active monitor after a
 successful toggle. The window is topmost, uses a rounded custom-drawn capsule, and
 uses `WS_EX_NOACTIVATE` plus `SW_SHOWNOACTIVATE` so the shortcut does not disturb
-the foreground video. Hide it with a 300 ms timer.
+the foreground video. Keep it compact and use 50% layered-window opacity so it does
+not cover the video. Hide it with a 300 ms timer.
 
 Rejected: Windows toast notifications as the only feedback because notification
 settings and Focus Assist can suppress them, and an HTML/WebView overlay because it

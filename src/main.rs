@@ -1542,7 +1542,7 @@ unsafe fn create_settings_controls(hwnd: HWND, state: &mut SettingsWindowState) 
         wm::WS_CHILD | wm::WS_VISIBLE,
         scale_for_dpi(20, dpi),
         scale_for_dpi(18, dpi),
-        scale_for_dpi(250, dpi),
+        scale_for_dpi(200, dpi),
         scale_for_dpi(28, dpi),
         0,
     );
@@ -1552,9 +1552,9 @@ unsafe fn create_settings_controls(hwnd: HWND, state: &mut SettingsWindowState) 
         "BUTTON",
         toggle_text,
         wm::WS_CHILD | wm::WS_VISIBLE | wm::WS_TABSTOP | wm::BS_PUSHBUTTON as u32,
-        scale_for_dpi(300, dpi),
+        scale_for_dpi(230, dpi),
         scale_for_dpi(14, dpi),
-        scale_for_dpi(160, dpi),
+        scale_for_dpi(150, dpi),
         scale_for_dpi(32, dpi),
         ID_TOGGLE_HDR,
     );
