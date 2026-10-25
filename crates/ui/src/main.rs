@@ -1591,10 +1591,7 @@ fn main() {
             gpui_kit::init(cx);
             apply_visual_theme(cx);
             let window_options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(
-                    size(px(760.), px(756.)),
-                    cx,
-                )),
+                window_bounds: Some(WindowBounds::centered(size(px(760.), px(756.)), cx)),
                 is_resizable: false,
                 is_minimizable: true,
                 ..TitleBar::window_options()
