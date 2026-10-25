@@ -1,0 +1,83 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          rustc -Vv
+          cargo -V
+
+      - name: Generate lockfile and format
+        shell: pwsh
+        run: |
+          cargo generate-lockfile
+          cargo fmt --all
+
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        shell: pwsh
+        run: cargo test
+
+      - name: Release build
+        shell: pwsh
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD "dist"
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          $exe = "target/x86_64-pc-windows-msvc/release/RtxHdrSwitch.exe"
+          if (-not (Test-Path $exe)) { throw "missing $exe" }
+          Copy-Item $exe $dist
+          Copy-Item README.md $dist
+          Copy-Item THIRD_PARTY_NOTICES.md $dist
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          "$hash  RtxHdrSwitch.exe" | Set-Content "$dist/RtxHdrSwitch.exe.sha256" -Encoding ascii
+          Compress-Archive -Path "$dist/*" -DestinationPath "RtxHdrSwitch-win-x64.zip" -Force
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: RtxHdrSwitch-win-x64
+          path: RtxHdrSwitch-win-x64.zip
+          if-no-files-found: error
+
+      - name: Upload build metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-metadata
+          path: |
+            Cargo.lock
+            Cargo.toml
+            build.rs
+            rust-toolchain.toml
+            .cargo
+            src
+            assets
+            resources.rc
+          if-no-files-found: warn
