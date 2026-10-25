@@ -22,7 +22,6 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError};
 use windows_sys::Win32::System::Threading::CreateMutexW;
-use windows_sys::Win32::UI::HiDpi::GetDpiForSystem;
 
 const INK: u32 = 0x0B1215;
 const PANEL: u32 = 0x121C20;
@@ -1591,13 +1590,9 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             apply_visual_theme(cx);
-            let scale_factor = unsafe { GetDpiForSystem() } as f32 / 96.;
             let window_options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(
-                    size(
-                        px(760. * scale_factor),
-                        px(756. * scale_factor),
-                    ),
+                    size(px(760.), px(756.)),
                     cx,
                 )),
                 is_resizable: false,
