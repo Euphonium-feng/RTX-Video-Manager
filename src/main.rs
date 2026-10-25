@@ -187,10 +187,10 @@ impl NvBackend {
             return Err(AppError::NvCplLoadFailed(GetLastError()));
         }
 
-        let p_init = GetProcAddress(module, b"NvCplApiInit\0".as_ptr());
-        let p_close = GetProcAddress(module, b"NvCplApiClose\0".as_ptr());
-        let p_get = GetProcAddress(module, b"NvCplApiGetSetting\0".as_ptr());
-        let p_set = GetProcAddress(module, b"NvCplApiSetSetting\0".as_ptr());
+        let p_init = GetProcAddress(module, c"NvCplApiInit".as_ptr().cast());
+        let p_close = GetProcAddress(module, c"NvCplApiClose".as_ptr().cast());
+        let p_get = GetProcAddress(module, c"NvCplApiGetSetting".as_ptr().cast());
+        let p_set = GetProcAddress(module, c"NvCplApiSetSetting".as_ptr().cast());
         if p_init.is_none() {
             FreeLibrary(module);
             return Err(AppError::MissingExport("NvCplApiInit"));
