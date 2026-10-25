@@ -2,8 +2,8 @@
 
 ## In Progress
 
-- Validate the GPUI console, host IPC, dual-EXE packaging, and failure-path recovery
-  against a green GitHub Actions artifact.
+- Validate the icon-embedded GPUI console against a green GitHub Actions artifact,
+  then inspect the taskbar/window icon and recheck the 500 ms overlay.
 
 ## Verified
 
@@ -24,19 +24,27 @@
   zero pixels.
 - GitHub Actions run `40189900273` is green for the committed native layout and
   overlay baseline.
+- GitHub Actions run `40207361394` is green for commit `97a8a07`; it produced host
+  hash `56CA4809C9523511DE2FC426906E086289A05F186D1B78565D838CF522093AB6`
+  and console hash `657A6376E9EC6946A0B2012F75FFC0234C47DC01797E4636B76914916C7CBC58`.
+- The host and console named-pipe deadlocks were fixed by assigning each connection's
+  complete read/write path to one thread. User testing confirmed that the tray,
+  shortcut, and GPUI console handshake now work.
+- The console icon master, PNG previews, multi-resolution ICO, resource script, and
+  cloud build wiring are present locally; final cloud and shell-surface validation
+  remain pending.
 - The runnable calibration-dashboard prototype is in `prototype/gpui-console.html`
   and has been rendered at 900 x 700 for visual review.
 
 ## Pending
 
-- Wait for a green dual-EXE cloud run and inspect compile, Clippy, formatting, and
-  dependency-lock results.
-- Validate ADR-009 after the local acceptance run showed the host main thread stuck
-  behind a synchronous named-pipe write while the IPC thread held a pending read.
-- Validate the GPUI-side single-I/O-thread change after the console handshake was
-  observed blocking on its own concurrent pipe read/write.
+- Push the icon and README changes and wait for a green cloud run that validates the
+  `embed-resource` dependency and `resources.rc` path resolution.
+- Download the green artifact and verify the custom icon in the taskbar, title bar,
+  executable properties, and notification-size shell surfaces.
 - Download the artifact and verify the GPUI console opens, toggles HDR, saves
   settings, records a shortcut, reconnects, and exits completely on close.
+- Visually verify the 500 ms overlay duration and 50% opacity in the final artifact.
 - Verify that tray, shortcut, native overlay, startup entry, single instance,
   Explorer restart, rollback injection, no-HDR-display, Windows-HDR-off, and
   Surround behavior remain unchanged.
@@ -49,5 +57,6 @@
 
 ## Next Action
 
-Watch the first GPUI cloud run, fix the actual compile/lint cause, and download the
-green dual-EXE artifact for Windows acceptance.
+Commit the icon, README, lockfile, and documentation updates; push to `main`; then run
+`gh run watch <id> --exit-status`. If green, download the artifact and inspect the
+console icon plus the 500 ms overlay on the reference machine.

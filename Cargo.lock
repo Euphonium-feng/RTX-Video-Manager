@@ -5287,6 +5287,7 @@ dependencies = [
 name = "rtx-hdr-settings"
 version = "0.1.0"
 dependencies = [
+ "embed-resource 2.5.2",
  "gpui-kit",
  "rtx-hdr-switch",
  "serde_json",

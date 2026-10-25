@@ -81,3 +81,13 @@ connection handle. This avoids blocking a synchronous pipe that already has a pe
 operation and keeps tray, hotkey, HDR events, and the GUI handshake responsive.
 
 Rejected: writing from the host UI thread while the IPC thread blocks in `ReadFile`.
+
+## ADR-010: Embed a calibration-ring product icon
+
+Use a graphite rounded tile, broken ice-blue calibration ring, white `H`, and amber
+marker as the console identity. Keep the SVG as the editable source and embed a
+multi-resolution ICO into `RtxHdrSettings.exe` through its own resource script.
+
+Rejected: shipping an external icon file, relying on a generic executable icon, or
+using the small tray-state glyphs as the full-size application identity. The dedicated
+icon stays legible from 16 to 256 pixels and does not add a runtime asset dependency.

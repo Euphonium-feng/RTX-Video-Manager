@@ -19,7 +19,9 @@ view over a local IPC contract.
 - `src/ipc.rs`: versioned IPC DTOs and length-prefixed JSON framing.
 - `crates/ui/`: `RtxHdrSettings.exe`, the GPUI console; it never links NvCpl. Its
   IPC worker also owns both directions of its pipe handle on one thread.
-- `assets/`: icon and manifest resources compiled into the executable.
+- `assets/`: tray state icons, the console product icon, and the shared application
+  manifest. `crates/ui/build.rs` embeds the console icon and manifest into
+  `RtxHdrSettings.exe`; the console does not depend on external asset files at runtime.
 - `.github/workflows/build.yml`: formatting, lint, tests, Release build, packaging,
   and artifact upload.
 
@@ -43,6 +45,13 @@ view over a local IPC contract.
    of the active monitor for 500 ms at 50% opacity.
 10. Closing the console exits `RtxHdrSettings.exe`; the host, tray, hotkey, and last
     HDR state remain active.
+
+## Product Icon
+
+`assets/rtx-hdr-console.svg` is the editable master. The checked-in PNG exports are
+documentation previews, while `assets/rtx-hdr-console.ico` carries sizes from 16 to
+256 pixels for Windows. The GPUI package compiles the ICO and shared manifest through
+`crates/ui/resources.rc`, so packaging only needs to ship the two executables.
 
 ## Glossary
 
