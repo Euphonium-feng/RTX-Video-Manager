@@ -7,9 +7,10 @@ use rtx_hdr_switch::ipc::{
     DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot,
 };
 use rtx_hdr_switch::{
-    format_hotkey, is_verified_nvcpl, parse_hdr_info, toggle_with_transport, AppError, HdrSnapshot,
-    Hotkey, NvTransport, Settings, ToggleOutcome, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT,
-    MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH, NVCPL_SHA256_HEX,
+    format_hotkey, is_verified_nvcpl, parse_hdr_info, toggle_with_transport, tune_with_transport,
+    AppError, HdrAdjustments, HdrSnapshot, Hotkey, NvTransport, Settings, ToggleOutcome,
+    TuningOutcome, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
+    NVCPL_RELATIVE_PATH, NVCPL_SHA256_HEX,
 };
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -73,6 +74,7 @@ const WM_NCDESTROY: u32 = 0x0082;
 const WM_ACTIVATE: u32 = 0x0006;
 
 const HOTKEY_ID: i32 = 1;
+const SHOW_HOTKEY_ID: i32 = 2;
 const REFRESH_TIMER_ID: usize = 1;
 const RECORD_TIMER_ID: usize = 2;
 const OVERLAY_TIMER_ID: usize = 1;
@@ -172,12 +174,14 @@ struct OverlayState {
 enum WorkerCommand {
     Read,
     Toggle,
+    ApplyHdrTuning(HdrAdjustments),
     Shutdown,
 }
 
 enum WorkerEvent {
     Read(Result<HdrSnapshot, AppError>),
     Toggle(Result<ToggleOutcome, AppError>),
+    HdrTuning(Result<TuningOutcome, AppError>),
 }
 
 type InitFn = unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32;
@@ -534,7 +538,7 @@ unsafe fn run() -> i32 {
         startup_warning = Some(format!("无法更新开机启动：{}", error.user_message()));
     }
 
-    let registered = register_configured_hotkey(hwnd, settings.hotkey);
+    let registered = register_configured_hotkeys(hwnd, &settings);
     {
         let state = APP_STATE.get().unwrap();
         let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
@@ -557,8 +561,7 @@ unsafe fn run() -> i32 {
         show_message(
             hwnd,
             &format!(
-                "无法注册快捷键 {}。\n\n{}\n请从托盘菜单打开设置并选择其他组合。",
-                format_hotkey(settings.hotkey),
+                "无法注册快捷键。\n\n{}\n请从托盘菜单打开控制台并选择其他组合。",
                 error.user_message()
             ),
             wm::MB_OK | wm::MB_ICONWARNING,
@@ -868,6 +871,10 @@ unsafe extern "system" fn wndproc(
             request_toggle(hwnd, true);
             0
         }
+        wm::WM_HOTKEY if wparam as i32 == SHOW_HOTKEY_ID => {
+            open_settings(hwnd);
+            0
+        }
         WM_APP_TRAY => {
             match lparam as u32 {
                 wm::WM_LBUTTONUP => open_settings(hwnd),
@@ -917,6 +924,7 @@ unsafe fn cleanup(hwnd: HWND) {
 
     wm::KillTimer(hwnd, REFRESH_TIMER_ID);
     let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+    let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
     host_ipc::shutdown();
     if let Some(worker) = worker {
         let _ = worker.send(WorkerCommand::Shutdown);
@@ -1009,6 +1017,9 @@ unsafe fn handle_ipc_events(hwnd: HWND) {
             }
             IpcEvent::Command(command) => match command {
                 UiCommand::ToggleHdr => request_toggle(hwnd, false),
+                UiCommand::ApplyHdrTuning { adjustments } => {
+                    request_hdr_tuning(hwnd, adjustments)
+                }
                 UiCommand::ApplySettings { settings } => match apply_settings(hwnd, settings) {
                     Ok(()) => {}
                     Err(error) => {
@@ -1045,6 +1056,7 @@ unsafe fn begin_hotkey_capture(hwnd: HWND) {
         return;
     }
     let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+    let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
     if let Some(state) = APP_STATE.get() {
         let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
         state.capture_active = true;
@@ -1055,21 +1067,21 @@ unsafe fn begin_hotkey_capture(hwnd: HWND) {
 }
 
 unsafe fn end_hotkey_capture(hwnd: HWND, disconnected: bool) {
-    let (active, hotkey) = if let Some(state) = APP_STATE.get() {
+    let (active, settings) = if let Some(state) = APP_STATE.get() {
         let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
         if !state.capture_active {
             return;
         }
         state.capture_active = false;
-        (true, state.settings.hotkey)
+        (true, state.settings.clone())
     } else {
-        (false, Hotkey::default())
+        (false, Settings::default())
     };
     if !active {
         return;
     }
 
-    let result = register_configured_hotkey(hwnd, hotkey);
+    let result = register_configured_hotkeys(hwnd, &settings);
     if let Some(state) = APP_STATE.get() {
         let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
         state.hotkey_registered = result.is_ok();
@@ -1141,6 +1153,30 @@ unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
     }
 }
 
+unsafe fn request_hdr_tuning(hwnd: HWND, adjustments: HdrAdjustments) {
+    let sender = if let Some(state) = APP_STATE.get() {
+        let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.busy || state.worker_tx.is_none() {
+            return;
+        }
+        state.busy = true;
+        state.worker_tx.clone()
+    } else {
+        None
+    };
+    if let Some(sender) = sender {
+        if sender.send(WorkerCommand::ApplyHdrTuning(adjustments)).is_err() {
+            if let Some(state) = APP_STATE.get() {
+                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+                state.busy = false;
+            }
+            log_line("failed to send HDR tuning command to NVIDIA worker");
+        }
+        add_or_update_tray(hwnd, false);
+        send_ui_snapshot();
+    }
+}
+
 fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
     let hwnd = hwnd_value as HWND;
     let mut backend: Option<NvBackend> = None;
@@ -1182,6 +1218,25 @@ fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
                     backend = None;
                 }
                 post_worker_event(hwnd, WorkerEvent::Toggle(result));
+            }
+            WorkerCommand::ApplyHdrTuning(adjustments) => {
+                if backend.is_none() {
+                    match unsafe { NvBackend::open() } {
+                        Ok(value) => backend = Some(value),
+                        Err(error) => {
+                            post_worker_event(hwnd, WorkerEvent::HdrTuning(Err(error)));
+                            continue;
+                        }
+                    }
+                }
+                let result = tune_with_transport(backend.as_mut().unwrap(), &adjustments);
+                if result.is_err() {
+                    log_line(&format!("NVIDIA HDR tuning failed: {result:?}"));
+                }
+                if matches!(&result, Err(AppError::RollbackFailed)) {
+                    backend = None;
+                }
+                post_worker_event(hwnd, WorkerEvent::HdrTuning(result));
             }
             WorkerCommand::Shutdown => break,
         }
@@ -1318,6 +1373,48 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                     let _ = send_ui_event(HostEvent::HdrChanged(snapshot));
                 }
             }
+            WorkerEvent::HdrTuning(result) => {
+                let (success, error_message) = if let Some(state) = APP_STATE.get() {
+                    let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+                    state.busy = false;
+                    match result {
+                        Ok(outcome) => {
+                            state.hdr = HdrUi::Ready(outcome.after);
+                            state.last_error = None;
+                            (true, None)
+                        }
+                        Err(error) => {
+                            let critical = matches!(error, AppError::RollbackFailed);
+                            let text = error.user_message();
+                            if critical {
+                                state.hdr = HdrUi::Error(text.clone());
+                            }
+                            state.last_error = Some(text.clone());
+                            (false, Some((error, text, critical)))
+                        }
+                    }
+                } else {
+                    (false, None)
+                };
+                add_or_update_tray(hwnd, false);
+                refresh_settings_toggle_button();
+                if success {
+                    log_line("NVIDIA HDR tuning applied");
+                } else if let Some((error, text, critical)) = error_message {
+                    show_balloon(hwnd, "RTX 视频 HDR", &text, true);
+                    send_ui_error(error);
+                    if critical {
+                        show_message(
+                            hwnd,
+                            &format!("{text}\n\n请立即打开 NVIDIA App 检查 RTX 视频 HDR 状态。"),
+                            wm::MB_OK | wm::MB_ICONERROR,
+                        );
+                    }
+                }
+                if let Some(snapshot) = ui_snapshot() {
+                    let _ = send_ui_event(HostEvent::HdrChanged(snapshot));
+                }
+            }
         }
     }
 }
@@ -1387,9 +1484,10 @@ fn tray_tooltip(state: &AppState) -> String {
         HdrUi::Error(_) => "不可用",
     };
     format!(
-        "RTX 视频 HDR：{} | {}",
+        "RTX 视频 HDR：{} | 切换 {} | 控制台 {}",
         state_text,
-        format_hotkey(state.settings.hotkey)
+        format_hotkey(state.settings.hotkey),
+        format_hotkey(state.settings.show_console_hotkey)
     )
 }
 
@@ -1529,7 +1627,7 @@ fn current_settings() -> Settings {
 }
 
 unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppError> {
-    candidate.hotkey.validate()?;
+    candidate.validate()?;
     let previous = current_settings();
     let was_registered = APP_STATE
         .get()
@@ -1540,14 +1638,23 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
                 .hotkey_registered
         })
         .unwrap_or(false);
-    let changed = candidate.hotkey != previous.hotkey || !was_registered;
+    let changed = candidate.hotkey != previous.hotkey
+        || candidate.show_console_hotkey != previous.show_console_hotkey
+        || !was_registered;
     if changed {
-        register_configured_hotkey(owner, candidate.hotkey)?;
+        if let Err(error) = register_configured_hotkeys(owner, &candidate) {
+            let restored = register_configured_hotkeys(owner, &previous).is_ok();
+            if let Some(state) = APP_STATE.get() {
+                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+                state.hotkey_registered = restored;
+            }
+            return Err(error);
+        }
     }
 
     if let Err(error) = set_autostart(candidate.start_at_login) {
         if changed {
-            let restored = register_configured_hotkey(owner, previous.hotkey).is_ok();
+            let restored = register_configured_hotkeys(owner, &previous).is_ok();
             if let Some(state) = APP_STATE.get() {
                 let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                 state.hotkey_registered = restored;
@@ -1558,7 +1665,7 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
     if let Err(error) = save_settings(&candidate) {
         let _ = set_autostart(previous.start_at_login);
         if changed {
-            let restored = register_configured_hotkey(owner, previous.hotkey).is_ok();
+            let restored = register_configured_hotkeys(owner, &previous).is_ok();
             if let Some(state) = APP_STATE.get() {
                 let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                 state.hotkey_registered = restored;
@@ -1580,13 +1687,45 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
     Ok(())
 }
 
-unsafe fn register_configured_hotkey(hwnd: HWND, hotkey: Hotkey) -> Result<(), AppError> {
-    hotkey.validate()?;
-    let result = RegisterHotKey(hwnd, HOTKEY_ID, hotkey.modifiers | MOD_NOREPEAT, hotkey.vk);
+unsafe fn register_configured_hotkeys(hwnd: HWND, settings: &Settings) -> Result<(), AppError> {
+    settings.validate()?;
+    let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+    let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
+
+    if let Err(error) = register_hotkey(
+        hwnd,
+        HOTKEY_ID,
+        settings.hotkey,
+        "切换 RTX HDR",
+    ) {
+        let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+        let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
+        return Err(error);
+    }
+    if let Err(error) = register_hotkey(
+        hwnd,
+        SHOW_HOTKEY_ID,
+        settings.show_console_hotkey,
+        "唤起控制台",
+    ) {
+        let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+        let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
+        return Err(error);
+    }
+    Ok(())
+}
+
+unsafe fn register_hotkey(
+    hwnd: HWND,
+    id: i32,
+    hotkey: Hotkey,
+    role: &str,
+) -> Result<(), AppError> {
+    let result = RegisterHotKey(hwnd, id, hotkey.modifiers | MOD_NOREPEAT, hotkey.vk);
     if result == 0 {
         let code = GetLastError();
         return Err(AppError::Settings(format!(
-            "无法注册快捷键 {}（Windows 错误 {code}）。",
+            "无法注册“{role}”快捷键 {}（Windows 错误 {code}）。",
             format_hotkey(hotkey)
         )));
     }
@@ -2180,6 +2319,8 @@ fn load_settings() -> (Settings, bool) {
     let notifications = query_registry_dword("Notifications");
     let modifiers = query_registry_dword("HotkeyModifiers");
     let virtual_key = query_registry_dword("HotkeyVirtualKey");
+    let show_modifiers = query_registry_dword("ShowHotkeyModifiers");
+    let show_virtual_key = query_registry_dword("ShowHotkeyVirtualKey");
     let first_run = start.is_none();
 
     let mut settings = Settings {
@@ -2195,6 +2336,18 @@ fn load_settings() -> (Settings, bool) {
         if hotkey.validate().is_ok() {
             settings.hotkey = hotkey;
         }
+    }
+    if let (Some(modifiers), Some(virtual_key)) = (show_modifiers, show_virtual_key) {
+        let hotkey = Hotkey {
+            modifiers,
+            vk: virtual_key,
+        };
+        if hotkey.validate().is_ok() {
+            settings.show_console_hotkey = hotkey;
+        }
+    }
+    if settings.validate().is_err() {
+        settings.show_console_hotkey = Hotkey::console_default();
     }
     (settings, first_run)
 }
@@ -2220,6 +2373,16 @@ fn save_settings(settings: &Settings) -> Result<(), AppError> {
         let result = (|| {
             set_registry_dword(key, "HotkeyModifiers", settings.hotkey.modifiers)?;
             set_registry_dword(key, "HotkeyVirtualKey", settings.hotkey.vk)?;
+            set_registry_dword(
+                key,
+                "ShowHotkeyModifiers",
+                settings.show_console_hotkey.modifiers,
+            )?;
+            set_registry_dword(
+                key,
+                "ShowHotkeyVirtualKey",
+                settings.show_console_hotkey.vk,
+            )?;
             set_registry_dword(
                 key,
                 "StartAtLogin",

@@ -3,6 +3,8 @@
 mod ipc_client;
 
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
+use gpui_kit::component::input::{InputEvent, InputState, NumberInput};
+use gpui_kit::component::slider::{Slider, SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -10,8 +12,8 @@ use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
 use rtx_hdr_switch::ipc::{HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot};
 use rtx_hdr_switch::{
-    AppError, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_SHA256_HEX, Settings,
-    format_hotkey,
+    AppError, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
+    NVCPL_SHA256_HEX, Settings, format_hotkey,
 };
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -34,11 +36,35 @@ const DANGER: u32 = 0xFF7B70;
 const SUBTLE: u32 = 0x64797D;
 const UI_MUTEX: &str = r"Local\RtxHdrSwitch.SettingsWindow.v1";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HotkeyField {
+    Toggle,
+    Console,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TuningField {
+    Peak,
+    MiddleGray,
+    Contrast,
+    Saturation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TuningSource {
+    Slider,
+    Input,
+    Snapshot,
+}
+
 struct ConsoleApp {
     snapshot: Option<UiSnapshot>,
     draft: Settings,
+    hdr_draft: Option<HdrAdjustments>,
+    hdr_dirty: bool,
+    tuning_saving: bool,
     page: UiPage,
-    recording: bool,
+    recording: Option<HotkeyField>,
     saving: bool,
     dirty: bool,
     connection_error: Option<String>,
@@ -46,6 +72,15 @@ struct ConsoleApp {
     saved_note: Option<String>,
     ipc: Option<IpcClient>,
     focus_handle: FocusHandle,
+    peak_slider: Entity<SliderState>,
+    middle_gray_slider: Entity<SliderState>,
+    contrast_slider: Entity<SliderState>,
+    saturation_slider: Entity<SliderState>,
+    peak_input: Entity<InputState>,
+    middle_gray_input: Entity<InputState>,
+    contrast_input: Entity<InputState>,
+    saturation_input: Entity<InputState>,
+    subscriptions: Vec<Subscription>,
 }
 
 impl ConsoleApp {
@@ -54,11 +89,25 @@ impl ConsoleApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let peak_slider = cx.new(|_| SliderState::new().min(0.).max(1000.).step(1.));
+        let middle_gray_slider = cx.new(|_| SliderState::new().min(0.).max(100.).step(1.));
+        let contrast_slider = cx.new(|_| SliderState::new().min(-100.).max(100.).step(1.));
+        let saturation_slider = cx.new(|_| SliderState::new().min(-100.).max(100.).step(1.));
+        let peak_input = cx.new(|cx| InputState::new(window, cx).step(1.).min(0.).max(5000.));
+        let middle_gray_input =
+            cx.new(|cx| InputState::new(window, cx).step(1.).min(0.).max(100.));
+        let contrast_input =
+            cx.new(|cx| InputState::new(window, cx).step(1.).min(-100.).max(100.));
+        let saturation_input =
+            cx.new(|cx| InputState::new(window, cx).step(1.).min(-100.).max(100.));
         let mut app = Self {
             snapshot: None,
             draft: Settings::default(),
+            hdr_draft: None,
+            hdr_dirty: false,
+            tuning_saving: false,
             page: UiPage::Console,
-            recording: false,
+            recording: None,
             saving: false,
             dirty: false,
             connection_error: None,
@@ -66,15 +115,62 @@ impl ConsoleApp {
             saved_note: None,
             ipc: None,
             focus_handle: cx.focus_handle(),
+            peak_slider,
+            middle_gray_slider,
+            contrast_slider,
+            saturation_slider,
+            peak_input,
+            middle_gray_input,
+            contrast_input,
+            saturation_input,
+            subscriptions: Vec::new(),
         };
-        app.apply_connection(connection, cx);
+        app.bind_tuning_controls(window, cx);
+        app.apply_connection(connection, window, cx);
         window.activate_window();
         app
+    }
+
+    fn bind_tuning_controls(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for (field, slider) in [
+            (TuningField::Peak, self.peak_slider.clone()),
+            (TuningField::MiddleGray, self.middle_gray_slider.clone()),
+            (TuningField::Contrast, self.contrast_slider.clone()),
+            (TuningField::Saturation, self.saturation_slider.clone()),
+        ] {
+            self.subscriptions.push(cx.subscribe_in(
+                &slider,
+                window,
+                move |app, _, event: &SliderEvent, window, cx| {
+                    let value = match event {
+                        SliderEvent::Change(value) | SliderEvent::Release(value) => value.end(),
+                    };
+                    app.set_tuning_from_slider(field, value, window, cx);
+                },
+            ));
+        }
+        for (field, input) in [
+            (TuningField::Peak, self.peak_input.clone()),
+            (TuningField::MiddleGray, self.middle_gray_input.clone()),
+            (TuningField::Contrast, self.contrast_input.clone()),
+            (TuningField::Saturation, self.saturation_input.clone()),
+        ] {
+            self.subscriptions.push(cx.subscribe_in(
+                &input,
+                window,
+                move |app, _, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        app.set_tuning_from_input(field, window, cx);
+                    }
+                },
+            ));
+        }
     }
 
     fn apply_connection(
         &mut self,
         connection: Result<(IpcClient, Receiver<ClientEvent>), String>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match connection {
@@ -82,7 +178,7 @@ impl ConsoleApp {
                 log_line("console connected to host");
                 self.ipc = Some(client);
                 self.connection_error = None;
-                self.start_event_pump(events, cx);
+                self.start_event_pump(events, window, cx);
             }
             Err(error) => {
                 log_line(&format!("console connection failed: {error}"));
@@ -92,8 +188,13 @@ impl ConsoleApp {
         }
     }
 
-    fn start_event_pump(&self, events: Receiver<ClientEvent>, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
+    fn start_event_pump(
+        &self,
+        events: Receiver<ClientEvent>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |this, cx| {
             loop {
                 let mut disconnected = None;
                 while let Ok(event) = events.try_recv() {
@@ -102,8 +203,8 @@ impl ConsoleApp {
                         break;
                     }
                     if this
-                        .update(cx, |app, cx| {
-                            app.handle_client_event(event, cx);
+                        .update_in(cx, |app, window, cx| {
+                            app.handle_client_event(event, window, cx);
                             cx.notify();
                         })
                         .is_err()
@@ -113,8 +214,8 @@ impl ConsoleApp {
                 }
                 if let Some(event) = disconnected {
                     if this
-                        .update(cx, |app, cx| {
-                            app.handle_client_event(event, cx);
+                        .update_in(cx, |app, window, cx| {
+                            app.handle_client_event(event, window, cx);
                             cx.notify();
                         })
                         .is_err()
@@ -131,7 +232,12 @@ impl ConsoleApp {
         .detach();
     }
 
-    fn handle_client_event(&mut self, event: ClientEvent, cx: &mut Context<Self>) {
+    fn handle_client_event(
+        &mut self,
+        event: ClientEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             ClientEvent::Connected => {
                 log_line("console IPC handshake complete");
@@ -141,29 +247,39 @@ impl ConsoleApp {
             ClientEvent::Disconnected(message) => {
                 log_line(&format!("console disconnected: {message}"));
                 self.connection_error = Some(message);
-                self.recording = false;
+                self.recording = None;
                 self.saving = false;
+                self.tuning_saving = false;
             }
             ClientEvent::Event(HostEvent::Hello { .. }) => {}
-            ClientEvent::Event(HostEvent::Snapshot(snapshot))
-            | ClientEvent::Event(HostEvent::HdrChanged(snapshot)) => {
-                self.apply_snapshot(snapshot);
+            ClientEvent::Event(HostEvent::Snapshot(snapshot)) => {
+                self.apply_snapshot(snapshot, window, cx);
+            }
+            ClientEvent::Event(HostEvent::HdrChanged(snapshot)) => {
+                if self.tuning_saving {
+                    self.tuning_saving = false;
+                    self.hdr_dirty = false;
+                }
+                self.apply_snapshot(snapshot, window, cx);
             }
             ClientEvent::Event(HostEvent::SettingsApplied(snapshot)) => {
                 self.dirty = false;
                 self.saving = false;
                 self.saved_note = Some("设置已保存".into());
-                self.apply_snapshot(snapshot);
+                self.apply_snapshot(snapshot, window, cx);
             }
             ClientEvent::Event(HostEvent::Error(UiError { message, critical })) => {
                 self.saving = false;
+                self.tuning_saving = false;
                 self.transient_error = Some(message.clone());
                 if critical {
                     self.connection_error = Some(message);
                 }
             }
             ClientEvent::Event(HostEvent::HotkeyCaptureChanged { active }) => {
-                self.recording = active;
+                if !active {
+                    self.recording = None;
+                }
             }
             ClientEvent::Event(HostEvent::ActivatePage { page }) => {
                 self.page = page;
@@ -175,16 +291,31 @@ impl ConsoleApp {
         }
     }
 
-    fn apply_snapshot(&mut self, snapshot: UiSnapshot) {
-        if !self.dirty && !self.recording {
+    fn apply_snapshot(
+        &mut self,
+        snapshot: UiSnapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.dirty && self.recording.is_none() {
             self.draft = snapshot.settings.clone();
         }
+        let hdr = match &snapshot.hdr {
+            UiHdrState::Ready(hdr) => Some(hdr.clone()),
+            _ => None,
+        };
         self.snapshot = Some(snapshot);
+        if !self.hdr_dirty && !self.tuning_saving {
+            self.hdr_draft = hdr
+                .as_ref()
+                .map(HdrAdjustments::from_snapshot);
+            self.sync_tuning_controls(window, cx);
+        }
     }
 
-    fn reconnect(&mut self, cx: &mut Context<Self>) {
+    fn reconnect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.connection_error = None;
-        self.apply_connection(IpcClient::connect_retry(), cx);
+        self.apply_connection(IpcClient::connect_retry(), window, cx);
         cx.notify();
     }
 
@@ -206,12 +337,20 @@ impl ConsoleApp {
         self.send(UiCommand::ToggleHdr, cx);
     }
 
-    fn begin_recording(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.recording {
-            self.recording = false;
+    fn begin_recording(
+        &mut self,
+        field: HotkeyField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.recording == Some(field) {
+            self.recording = None;
             self.send(UiCommand::EndHotkeyCapture, cx);
+        } else if self.recording.is_some() {
+            self.recording = Some(field);
+            self.focus_handle.focus(window, cx);
         } else {
-            self.recording = true;
+            self.recording = Some(field);
             self.focus_handle.focus(window, cx);
             self.send(UiCommand::BeginHotkeyCapture, cx);
         }
@@ -224,21 +363,33 @@ impl ConsoleApp {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.recording {
+        let Some(target) = self.recording else {
             return;
-        }
+        };
         if event.keystroke.key.eq_ignore_ascii_case("escape")
             && !event.keystroke.modifiers.modified()
         {
-            self.recording = false;
+            self.recording = None;
             self.send(UiCommand::EndHotkeyCapture, cx);
             cx.notify();
             return;
         }
         match hotkey_from_keystroke(&event.keystroke) {
             Ok(hotkey) => {
-                self.draft.hotkey = hotkey;
-                self.recording = false;
+                let other = match target {
+                    HotkeyField::Toggle => self.draft.show_console_hotkey,
+                    HotkeyField::Console => self.draft.hotkey,
+                };
+                if hotkey == other {
+                    self.transient_error = Some("两个快捷键不能相同。".into());
+                    cx.notify();
+                    return;
+                }
+                match target {
+                    HotkeyField::Toggle => self.draft.hotkey = hotkey,
+                    HotkeyField::Console => self.draft.show_console_hotkey = hotkey,
+                }
+                self.recording = None;
                 self.dirty = true;
                 self.transient_error = None;
                 self.send(UiCommand::EndHotkeyCapture, cx);
@@ -248,6 +399,152 @@ impl ConsoleApp {
             }
         }
         cx.notify();
+    }
+
+    fn set_tuning_from_slider(
+        &mut self,
+        field: TuningField,
+        slider_value: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let value = if field == TuningField::Peak {
+            let Some(hdr) = self.hdr_ready() else {
+                return;
+            };
+            let position = slider_value.clamp(0., 1000.);
+            (hdr.peak_min as f32
+                + (hdr.peak_max - hdr.peak_min) as f32 * position / 1000.)
+                .round() as i32
+        } else {
+            slider_value.round() as i32
+        };
+        self.set_tuning_value(field, value, TuningSource::Slider, window, cx);
+    }
+
+    fn set_tuning_from_input(
+        &mut self,
+        field: TuningField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = self.tuning_input(field);
+        let Ok(value) = input.read(cx).value().trim().parse::<i32>() else {
+            return;
+        };
+        self.set_tuning_value(field, value, TuningSource::Input, window, cx);
+    }
+
+    fn set_tuning_value(
+        &mut self,
+        field: TuningField,
+        value: i32,
+        source: TuningSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(hdr) = self.hdr_ready().cloned() else {
+            return;
+        };
+        let value = match field {
+            TuningField::Peak => value.clamp(hdr.peak_min, hdr.peak_max),
+            TuningField::MiddleGray => value.clamp(0, 100),
+            TuningField::Contrast | TuningField::Saturation => value.clamp(-100, 100),
+        };
+        let Some(draft) = self.hdr_draft.as_mut() else {
+            return;
+        };
+        match field {
+            TuningField::Peak => draft.peak_brightness = value,
+            TuningField::MiddleGray => draft.middle_gray = value,
+            TuningField::Contrast => draft.contrast = value,
+            TuningField::Saturation => draft.saturation = value,
+        }
+        self.hdr_dirty = *draft != HdrAdjustments::from_snapshot(&hdr);
+        self.write_tuning_control(field, value, &hdr, source, window, cx);
+        self.saved_note = None;
+        cx.notify();
+    }
+
+    fn write_tuning_control(
+        &self,
+        field: TuningField,
+        value: i32,
+        hdr: &rtx_hdr_switch::HdrSnapshot,
+        source: TuningSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if source != TuningSource::Input {
+            let input = self.tuning_input(field);
+            input.update(cx, |state, cx| {
+                state.set_value(value.to_string(), window, cx);
+            });
+        }
+        if source != TuningSource::Slider {
+            let slider = self.tuning_slider(field);
+            let slider_value = if field == TuningField::Peak {
+                let range = (hdr.peak_max - hdr.peak_min) as f32;
+                if range <= 0. {
+                    0.
+                } else {
+                    (value - hdr.peak_min) as f32 / range * 1000.
+                }
+            } else {
+                value as f32
+            };
+            slider.update(cx, |state, cx| {
+                state.set_value(SliderValue::Single(slider_value), window, cx);
+            });
+        }
+        if field == TuningField::Peak && source == TuningSource::Snapshot {
+            self.peak_input.update(cx, |state, cx| {
+                state.set_min(Some(hdr.peak_min as f64), window, cx);
+                state.set_max(Some(hdr.peak_max as f64), window, cx);
+            });
+        }
+    }
+
+    fn sync_tuning_controls(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(hdr) = self.hdr_ready().cloned() else {
+            return;
+        };
+        let Some(draft) = self.hdr_draft.clone() else {
+            return;
+        };
+        for (field, value) in [
+            (TuningField::Peak, draft.peak_brightness),
+            (TuningField::MiddleGray, draft.middle_gray),
+            (TuningField::Contrast, draft.contrast),
+            (TuningField::Saturation, draft.saturation),
+        ] {
+            self.write_tuning_control(
+                field,
+                value,
+                &hdr,
+                TuningSource::Snapshot,
+                window,
+                cx,
+            );
+        }
+    }
+
+    fn tuning_input(&self, field: TuningField) -> Entity<InputState> {
+        match field {
+            TuningField::Peak => self.peak_input.clone(),
+            TuningField::MiddleGray => self.middle_gray_input.clone(),
+            TuningField::Contrast => self.contrast_input.clone(),
+            TuningField::Saturation => self.saturation_input.clone(),
+        }
+    }
+
+    fn tuning_slider(&self, field: TuningField) -> Entity<SliderState> {
+        match field {
+            TuningField::Peak => self.peak_slider.clone(),
+            TuningField::MiddleGray => self.middle_gray_slider.clone(),
+            TuningField::Contrast => self.contrast_slider.clone(),
+            TuningField::Saturation => self.saturation_slider.clone(),
+        }
     }
 
     fn set_startup(&mut self, value: bool, cx: &mut Context<Self>) {
@@ -277,7 +574,7 @@ impl ConsoleApp {
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
-        if self.recording {
+        if self.recording.is_some() {
             return;
         }
         self.saving = true;
@@ -286,6 +583,31 @@ impl ConsoleApp {
         self.transient_error = None;
         let settings = self.draft.clone();
         self.send(UiCommand::ApplySettings { settings }, cx);
+        cx.notify();
+    }
+
+    fn reset_tuning(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(hdr) = self.hdr_ready().cloned() {
+            self.hdr_draft = Some(HdrAdjustments::from_snapshot(&hdr));
+            self.hdr_dirty = false;
+            self.transient_error = None;
+            self.sync_tuning_controls(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn save_tuning(&mut self, cx: &mut Context<Self>) {
+        let Some(adjustments) = self.hdr_draft.clone() else {
+            return;
+        };
+        if !self.hdr_dirty || !self.can_tune() {
+            return;
+        }
+        self.tuning_saving = true;
+        self.transient_error = None;
+        self.saved_note = None;
+        log_line("console requested HDR tuning");
+        self.send(UiCommand::ApplyHdrTuning { adjustments }, cx);
         cx.notify();
     }
 
@@ -301,6 +623,14 @@ impl ConsoleApp {
     }
 
     fn can_toggle(&self) -> bool {
+        self.connection_error.is_none()
+            && !self.busy()
+            && self
+                .hdr_ready()
+                .is_some_and(|hdr| hdr.supported && hdr.error_code == 0)
+    }
+
+    fn can_tune(&self) -> bool {
         self.connection_error.is_none()
             && !self.busy()
             && self
@@ -361,26 +691,70 @@ impl ConsoleApp {
 
     fn render_title_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let _ = cx;
-        TitleBar::new().bg(rgb(INK)).border_color(rgb(RULE)).child(
-            h_flex()
-                .w_full()
-                .items_center()
-                .gap_2()
-                .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(SIGNAL)))
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(0xC6D4D5))
-                        .child("RTX HDR 控制台"),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(MUTED))
-                        .child("· 后台运行中"),
-                ),
-        )
+        h_flex()
+            .id("title-bar")
+            .h(px(34.))
+            .w_full()
+            .flex_shrink_0()
+            .items_center()
+            .border_b_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(INK))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .h_full()
+                    .pl_3()
+                    .gap_2()
+                    .items_center()
+                    .window_control_area(WindowControlArea::Drag)
+                    .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(SIGNAL)))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(0xC6D4D5))
+                            .child("RTX HDR 控制台"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(MUTED))
+                            .child("· 后台运行中"),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .id("window-controls")
+                    .h_full()
+                    .flex_shrink_0()
+                    .child(
+                        div()
+                            .id("minimize")
+                            .w(px(35.))
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(rgb(MUTED))
+                            .hover(|this| this.bg(rgb(RAISED)).text_color(rgb(TEXT)))
+                            .window_control_area(WindowControlArea::Min)
+                            .child("−"),
+                    )
+                    .child(
+                        div()
+                            .id("close")
+                            .w(px(35.))
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(rgb(MUTED))
+                            .hover(|this| this.bg(rgb(DANGER)).text_color(rgb(INK)))
+                            .window_control_area(WindowControlArea::Close)
+                            .child("×"),
+                    ),
+            )
     }
 
     fn render_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -485,7 +859,7 @@ impl ConsoleApp {
                                         div()
                                             .text_size(px(10.))
                                             .text_color(rgb(MUTED))
-                                            .child("实时峰值亮度"),
+                                            .child("HDR 峰值亮度"),
                                     )
                                     .child(
                                         div()
@@ -583,72 +957,284 @@ impl ConsoleApp {
                             .text_size(px(10.))
                             .text_color(rgb(SUBTLE))
                             .text_center()
-                            .child(format!("{} 可随时切换", format_hotkey(self.draft.hotkey))),
+                            .child(format!(
+                                "切换 {} · 控制台 {}",
+                                format_hotkey(self.draft.hotkey),
+                                format_hotkey(self.draft.show_console_hotkey)
+                            )),
                     ),
             )
     }
 
-    fn render_keycaps(&self) -> impl IntoElement {
+    fn render_keycaps(&self, hotkey: Hotkey) -> impl IntoElement {
         h_flex().gap_1().children(
-            format_hotkey(self.draft.hotkey)
+            format_hotkey(hotkey)
                 .split('+')
                 .map(keycap)
                 .collect::<Vec<_>>(),
         )
     }
 
+    fn render_hotkey_row(
+        &self,
+        field: HotkeyField,
+        label: &'static str,
+        hotkey: Hotkey,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let recording = self.recording == Some(field);
+        h_flex()
+            .h(px(47.))
+            .flex_shrink_0()
+            .items_center()
+            .gap_3()
+            .px_4()
+            .border_b_1()
+            .border_color(rgb(RULE))
+            .child(
+                div()
+                    .w(px(74.))
+                    .text_size(px(12.))
+                    .text_color(rgb(MUTED))
+                    .child(label),
+            )
+            .child(self.render_keycaps(hotkey))
+            .child(
+                Button::new(match field {
+                    HotkeyField::Toggle => "record-toggle",
+                    HotkeyField::Console => "record-console",
+                })
+                .custom(
+                    ButtonCustomVariant::new(cx)
+                        .color(rgb(RAISED).into())
+                        .foreground(if recording {
+                            rgb(WARM).into()
+                        } else {
+                            rgb(0xDBE7E8).into()
+                        })
+                        .hover(rgb(0x203138).into())
+                        .active(rgb(0x17262B).into()),
+                )
+                .label(if recording { "请按键…" } else { "录制" })
+                .compact()
+                .ml_auto()
+                .on_click(cx.listener(move |app, _, window, cx| {
+                    app.begin_recording(field, window, cx);
+                })),
+            )
+    }
+
+    fn render_tuning_control(
+        &self,
+        field: TuningField,
+        label: &'static str,
+        range: String,
+    ) -> impl IntoElement {
+        let input = self.tuning_input(field);
+        let slider = self.tuning_slider(field);
+        let enabled = self.can_tune() && !self.tuning_saving;
+        let unavailable_opacity = if enabled { 1.0 } else { 0.45 };
+        v_flex()
+            .flex_1()
+            .min_w(px(0.))
+            .gap_2()
+            .opacity(unavailable_opacity)
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(MUTED))
+                            .child(label),
+                    )
+                    .child(
+                        NumberInput::new(&input)
+                            .disabled(!enabled)
+                            .accessibility_label(label)
+                            .w(px(112.))
+                            .h(px(32.)),
+                    ),
+            )
+            .child(
+                Slider::new(&slider)
+                    .disabled(!enabled)
+                    .accessibility_label(label)
+                    .bg(rgb(SIGNAL))
+                    .text_color(rgb(TEXT))
+                    .h(px(26.))
+                    .w_full(),
+            )
+            .child(
+                h_flex()
+                    .justify_between()
+                    .font_family("Cascadia Mono")
+                    .text_size(px(9.))
+                    .text_color(rgb(SUBTLE))
+                    .child(range),
+            )
+    }
+
+    fn render_tuning(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let hdr = self.hdr_ready();
+        let peak_range = hdr.map_or("—".into(), |hdr| {
+            format!("{} – {} nits", hdr.peak_min, hdr.peak_max)
+        });
+        let peak_value = self
+            .hdr_draft
+            .as_ref()
+            .map_or("—".into(), |draft| format!("{} nits", draft.peak_brightness));
+        let disabled = !self.hdr_dirty || !self.can_tune() || self.tuning_saving;
+
+        v_flex()
+            .w_full()
+            .h(px(194.))
+            .flex_shrink_0()
+            .gap_3()
+            .p_4()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(if self.hdr_dirty { rgb(WARM) } else { rgb(RULE) })
+            .bg(rgb(PANEL))
+            .child(
+                h_flex()
+                    .h(px(28.))
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("HDR 调校"),
+                    )
+                    .child(
+                        div()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("NVIDIA 0x318 · 独立应用"),
+                    )
+                    .when(self.hdr_dirty, |this| {
+                        this.child(
+                            div()
+                                .px_2()
+                                .py(px(2.))
+                                .rounded_full()
+                                .bg(rgb(WARM).opacity(0.12))
+                                .text_size(px(9.))
+                                .text_color(rgb(WARM))
+                                .child("未应用"),
+                        )
+                    })
+                    .child(
+                        h_flex()
+                            .ml_auto()
+                            .gap_2()
+                            .child(
+                                Button::new("reset-tuning")
+                                    .ghost()
+                                    .compact()
+                                    .label("还原")
+                                    .disabled(self.tuning_saving)
+                                    .on_click(cx.listener(|app, _, window, cx| {
+                                        app.reset_tuning(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("apply-tuning")
+                                    .custom(
+                                        ButtonCustomVariant::new(cx)
+                                            .color(rgb(SIGNAL).into())
+                                            .foreground(rgb(INK).into())
+                                            .hover(rgb(SIGNAL_HOVER).into())
+                                            .active(rgb(0x51CBD4).into()),
+                                    )
+                                    .compact()
+                                    .label(if self.tuning_saving {
+                                        "写入中…"
+                                    } else {
+                                        "应用调校"
+                                    })
+                                    .loading(self.tuning_saving)
+                                    .disabled(disabled)
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.save_tuning(cx);
+                                    })),
+                            ),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .flex_1()
+                    .gap_5()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .gap_3()
+                            .child(self.render_tuning_control(
+                                TuningField::Peak,
+                                "峰值亮度",
+                                peak_range,
+                            ))
+                            .child(self.render_tuning_control(
+                                TuningField::MiddleGray,
+                                "中间灰",
+                                "0 – 100".into(),
+                            )),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .gap_3()
+                            .child(self.render_tuning_control(
+                                TuningField::Contrast,
+                                "对比度",
+                                "−100 – +100".into(),
+                            ))
+                            .child(self.render_tuning_control(
+                                TuningField::Saturation,
+                                "饱和度",
+                                "−100 – +100".into(),
+                            )),
+                    ),
+            )
+            .child(
+                div()
+                    .font_family("Cascadia Mono")
+                    .text_size(px(9.))
+                    .text_color(rgb(SUBTLE))
+                    .child(format!(
+                        "当前峰值 {peak_value} · 写入后逐项回读，失败自动回滚"
+                    )),
+            )
+    }
+
     fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
-            .h(px(179.))
+            .h(px(226.))
             .flex_shrink_0()
             .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
             .bg(rgb(PANEL))
-            .child(
-                h_flex()
-                    .h(px(47.))
-                    .flex_shrink_0()
-                    .items_center()
-                    .gap_3()
-                    .px_4()
-                    .border_b_1()
-                    .border_color(rgb(RULE))
-                    .child(
-                        div()
-                            .w(px(92.))
-                            .text_size(px(12.))
-                            .text_color(rgb(MUTED))
-                            .child("快捷键"),
-                    )
-                    .child(self.render_keycaps())
-                    .child(
-                        Button::new("record")
-                            .custom(
-                                ButtonCustomVariant::new(cx)
-                                    .color(rgb(RAISED).into())
-                                    .foreground(if self.recording {
-                                        rgb(WARM).into()
-                                    } else {
-                                        rgb(0xDBE7E8).into()
-                                    })
-                                    .hover(rgb(0x203138).into())
-                                    .active(rgb(0x17262B).into()),
-                            )
-                            .label(if self.recording {
-                                "请按键…"
-                            } else {
-                                "录制"
-                            })
-                            .compact()
-                            .ml_auto()
-                            .on_click(cx.listener(|app, _, window, cx| {
-                                app.begin_recording(window, cx);
-                            })),
-                    ),
-            )
+            .child(self.render_hotkey_row(
+                HotkeyField::Toggle,
+                "切换 HDR",
+                self.draft.hotkey,
+                cx,
+            ))
+            .child(self.render_hotkey_row(
+                HotkeyField::Console,
+                "唤起控制台",
+                self.draft.show_console_hotkey,
+                cx,
+            ))
             .child(behavior_row(
                 "启动",
                 "登录 Windows 时自动启动",
@@ -778,8 +1364,10 @@ impl ConsoleApp {
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let save_disabled =
-            !self.dirty || self.saving || self.recording || self.connection_error.is_some();
+        let save_disabled = !self.dirty
+            || self.saving
+            || self.recording.is_some()
+            || self.connection_error.is_some();
         let connection = if self.connection_error.is_some() {
             "IPC 未连接 · 后台未运行"
         } else {
@@ -820,7 +1408,9 @@ impl ConsoleApp {
                             Button::new("reconnect")
                                 .ghost()
                                 .label("重连后台")
-                                .on_click(cx.listener(|app, _, _, cx| app.reconnect(cx))),
+                                .on_click(cx.listener(|app, _, window, cx| {
+                                    app.reconnect(window, cx);
+                                })),
                         )
                     })
                     .child(
@@ -871,6 +1461,11 @@ impl Render for ConsoleApp {
                     .pb(px(14.))
                     .gap_3()
                     .child(self.render_hero(cx))
+                    .child(if self.page == UiPage::Console {
+                        self.render_tuning(cx).into_any_element()
+                    } else {
+                        div().h(px(0.)).into_any_element()
+                    })
                     .child(if self.page == UiPage::Diagnostics {
                         self.render_diagnostics(cx).into_any_element()
                     } else {
@@ -1086,7 +1681,7 @@ fn main() {
             gpui_kit::init(cx);
             apply_visual_theme(cx);
             let window_options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(size(px(760.), px(540.)), cx)),
+                window_bounds: Some(WindowBounds::centered(size(px(760.), px(748.)), cx)),
                 is_resizable: false,
                 is_minimizable: true,
                 ..TitleBar::window_options()

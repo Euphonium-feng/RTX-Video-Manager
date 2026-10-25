@@ -1,8 +1,8 @@
-use crate::{HdrSnapshot, Settings};
+use crate::{HdrAdjustments, HdrSnapshot, Settings};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const PIPE_NAME: &str = r"\\.\pipe\RtxHdrSwitch.Settings.v1";
 pub const MAX_FRAME_SIZE: usize = 64 * 1024;
 
@@ -48,6 +48,7 @@ pub struct UiError {
 pub enum UiCommand {
     Hello { protocol_version: u32 },
     ToggleHdr,
+    ApplyHdrTuning { adjustments: HdrAdjustments },
     ApplySettings { settings: Settings },
     BeginHotkeyCapture,
     EndHotkeyCapture,
@@ -157,6 +158,7 @@ mod tests {
         let command = UiCommand::ApplySettings {
             settings: Settings {
                 hotkey: Hotkey::default(),
+                show_console_hotkey: Hotkey::console_default(),
                 start_at_login: false,
                 notifications: true,
             },
@@ -165,6 +167,22 @@ mod tests {
         write_packet(&mut buffer, &command).unwrap();
         let mut cursor = Cursor::new(buffer);
         let payload = read_packet(&mut cursor).unwrap();
+        assert_eq!(decode::<UiCommand>(&payload).unwrap(), command);
+    }
+
+    #[test]
+    fn packet_round_trip_preserves_hdr_tuning() {
+        let command = UiCommand::ApplyHdrTuning {
+            adjustments: HdrAdjustments {
+                peak_brightness: 1000,
+                middle_gray: 50,
+                contrast: 8,
+                saturation: -4,
+            },
+        };
+        let mut buffer = Vec::new();
+        write_packet(&mut buffer, &command).unwrap();
+        let payload = read_packet(&mut Cursor::new(buffer)).unwrap();
         assert_eq!(decode::<UiCommand>(&payload).unwrap(), command);
     }
 

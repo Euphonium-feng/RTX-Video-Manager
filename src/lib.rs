@@ -8,6 +8,10 @@ pub const NVCPL_SHA256_HEX: &str =
     "eee812ab8ff74975d3cc7fe77130f5766911b6ca2d9c42c1156376a6c13f79f0";
 pub const HDR_SETTING_ID: u32 = 0x318;
 pub const HDR_INFO_SIZE: usize = 0x30;
+pub const MIDDLE_GRAY_MIN: i32 = 0;
+pub const MIDDLE_GRAY_MAX: i32 = 100;
+pub const TONE_ADJUSTMENT_MIN: i32 = -100;
+pub const TONE_ADJUSTMENT_MAX: i32 = 100;
 
 pub const MOD_ALT: u32 = 0x0001;
 pub const MOD_CONTROL: u32 = 0x0002;
@@ -31,6 +35,31 @@ pub struct HdrSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToggleOutcome {
+    pub before: HdrSnapshot,
+    pub after: HdrSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct HdrAdjustments {
+    pub peak_brightness: i32,
+    pub middle_gray: i32,
+    pub contrast: i32,
+    pub saturation: i32,
+}
+
+impl HdrAdjustments {
+    pub fn from_snapshot(snapshot: &HdrSnapshot) -> Self {
+        Self {
+            peak_brightness: snapshot.peak_brightness,
+            middle_gray: snapshot.middle_gray,
+            contrast: snapshot.contrast,
+            saturation: snapshot.saturation,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TuningOutcome {
     pub before: HdrSnapshot,
     pub after: HdrSnapshot,
 }
@@ -112,6 +141,13 @@ impl Default for Hotkey {
 }
 
 impl Hotkey {
+    pub const fn console_default() -> Self {
+        Self {
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: b'G' as u32,
+        }
+    }
+
     pub fn validate(self) -> Result<(), AppError> {
         if self.modifiers & HOTKEY_MODIFIER_MASK == 0 {
             return Err(AppError::Settings(
@@ -131,6 +167,8 @@ impl Hotkey {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Settings {
     pub hotkey: Hotkey,
+    #[serde(default = "default_show_console_hotkey")]
+    pub show_console_hotkey: Hotkey,
     pub start_at_login: bool,
     pub notifications: bool,
 }
@@ -139,10 +177,28 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             hotkey: Hotkey::default(),
+            show_console_hotkey: default_show_console_hotkey(),
             start_at_login: true,
             notifications: true,
         }
     }
+}
+
+impl Settings {
+    pub fn validate(&self) -> Result<(), AppError> {
+        self.hotkey.validate()?;
+        self.show_console_hotkey.validate()?;
+        if self.hotkey == self.show_console_hotkey {
+            return Err(AppError::Settings(
+                "切换 HDR 和唤起控制台的快捷键不能相同。".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn default_show_console_hotkey() -> Hotkey {
+    Hotkey::console_default()
 }
 
 pub trait NvTransport {
@@ -191,6 +247,20 @@ pub fn encode_hdr_write(original: &[u8; HDR_INFO_SIZE], enabled: bool) -> [u8; H
     output
 }
 
+pub fn encode_hdr_tuning(
+    original: &[u8; HDR_INFO_SIZE],
+    adjustments: &HdrAdjustments,
+) -> [u8; HDR_INFO_SIZE] {
+    let mut output = *original;
+    write_i32(&mut output, 0x10, adjustments.peak_brightness);
+    write_i32(&mut output, 0x14, adjustments.middle_gray);
+    write_i32(&mut output, 0x18, adjustments.contrast + 100);
+    write_i32(&mut output, 0x1c, adjustments.saturation + 100);
+    write_i32(&mut output, 0x08, 0);
+    write_i32(&mut output, 0x0c, 0);
+    output
+}
+
 pub fn validate_for_write(snapshot: &HdrSnapshot) -> Result<(), AppError> {
     if !snapshot.supported {
         return Err(AppError::HdrUnsupported);
@@ -202,6 +272,37 @@ pub fn validate_for_write(snapshot: &HdrSnapshot) -> Result<(), AppError> {
         3 => Err(AppError::SurroundEnabled),
         _ => Err(AppError::InvalidData("未知的 HDR 错误码")),
     }
+}
+
+pub fn validate_hdr_adjustments(
+    snapshot: &HdrSnapshot,
+    adjustments: &HdrAdjustments,
+) -> Result<(), AppError> {
+    validate_for_write(snapshot)?;
+    if adjustments.peak_brightness < snapshot.peak_min
+        || adjustments.peak_brightness > snapshot.peak_max
+    {
+        return Err(AppError::Settings(format!(
+            "峰值亮度必须位于 {} 到 {} nits 之间。",
+            snapshot.peak_min, snapshot.peak_max
+        )));
+    }
+    if !(MIDDLE_GRAY_MIN..=MIDDLE_GRAY_MAX).contains(&adjustments.middle_gray) {
+        return Err(AppError::Settings(format!(
+            "中间灰必须位于 {MIDDLE_GRAY_MIN} 到 {MIDDLE_GRAY_MAX} 之间。"
+        )));
+    }
+    for (name, value) in [
+        ("对比度", adjustments.contrast),
+        ("饱和度", adjustments.saturation),
+    ] {
+        if !(TONE_ADJUSTMENT_MIN..=TONE_ADJUSTMENT_MAX).contains(&value) {
+            return Err(AppError::Settings(format!(
+                "{name}必须位于 {TONE_ADJUSTMENT_MIN} 到 {TONE_ADJUSTMENT_MAX} 之间。"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn toggle_with_transport<T: NvTransport>(transport: &mut T) -> Result<ToggleOutcome, AppError> {
@@ -244,6 +345,53 @@ pub fn toggle_with_transport<T: NvTransport>(transport: &mut T) -> Result<Toggle
     recover_after_error(transport, &original, &before, AppError::VerificationFailed)
 }
 
+pub fn tune_with_transport<T: NvTransport>(
+    transport: &mut T,
+    adjustments: &HdrAdjustments,
+) -> Result<TuningOutcome, AppError> {
+    let original = transport.read_info()?;
+    let before = parse_hdr_info(&original)?;
+    validate_hdr_adjustments(&before, adjustments)?;
+
+    let desired_raw = encode_hdr_tuning(&original, adjustments);
+    if let Err(write_error) = transport.write_info(&desired_raw) {
+        return recover_tuning_after_error(transport, &original, &before, write_error);
+    }
+
+    let after_raw = match transport.read_info() {
+        Ok(value) => value,
+        Err(_) => {
+            return recover_tuning_after_error(
+                transport,
+                &original,
+                &before,
+                AppError::VerificationFailed,
+            );
+        }
+    };
+    let after = match parse_hdr_info(&after_raw) {
+        Ok(value) => value,
+        Err(_) => {
+            return recover_tuning_after_error(
+                transport,
+                &original,
+                &before,
+                AppError::VerificationFailed,
+            );
+        }
+    };
+    if tuning_matches(&before, &after, adjustments) {
+        return Ok(TuningOutcome { before, after });
+    }
+
+    recover_tuning_after_error(
+        transport,
+        &original,
+        &before,
+        AppError::VerificationFailed,
+    )
+}
+
 fn recover_after_error<T: NvTransport>(
     transport: &mut T,
     original: &[u8; HDR_INFO_SIZE],
@@ -265,6 +413,39 @@ fn recover_after_error<T: NvTransport>(
         }
         _ => Err(AppError::RollbackFailed),
     }
+}
+
+fn recover_tuning_after_error<T: NvTransport>(
+    transport: &mut T,
+    original: &[u8; HDR_INFO_SIZE],
+    before: &HdrSnapshot,
+    original_error: AppError,
+) -> Result<TuningOutcome, AppError> {
+    if transport.write_info(original).is_err() {
+        return Err(AppError::RollbackFailed);
+    }
+    let restored = transport
+        .read_info()
+        .ok()
+        .and_then(|raw| parse_hdr_info(&raw).ok());
+    match restored {
+        Some(value) if persistent_fields_equal(before, &value) && value.enabled == before.enabled => {
+            Err(original_error)
+        }
+        _ => Err(AppError::RollbackFailed),
+    }
+}
+
+fn tuning_matches(before: &HdrSnapshot, after: &HdrSnapshot, desired: &HdrAdjustments) -> bool {
+    after.supported
+        && after.error_code == 0
+        && after.enabled == before.enabled
+        && after.peak_min == before.peak_min
+        && after.peak_max == before.peak_max
+        && after.peak_brightness == desired.peak_brightness
+        && after.middle_gray == desired.middle_gray
+        && after.contrast == desired.contrast
+        && after.saturation == desired.saturation
 }
 
 pub fn persistent_fields_equal(left: &HdrSnapshot, right: &HdrSnapshot) -> bool {
@@ -452,6 +633,105 @@ mod tests {
     }
 
     #[test]
+    fn encodes_hdr_adjustments_without_changing_enabled_or_display_limits() {
+        let original = sample_raw(true);
+        let adjustments = HdrAdjustments {
+            peak_brightness: 1000,
+            middle_gray: 42,
+            contrast: 12,
+            saturation: -8,
+        };
+        let encoded = encode_hdr_tuning(&original, &adjustments);
+        assert_eq!(read_i32(&encoded, 0x04), 1);
+        assert_eq!(read_i32(&encoded, 0x08), 0);
+        assert_eq!(read_i32(&encoded, 0x0c), 0);
+        assert_eq!(read_i32(&encoded, 0x10), 1000);
+        assert_eq!(read_i32(&encoded, 0x14), 42);
+        assert_eq!(read_i32(&encoded, 0x18), 112);
+        assert_eq!(read_i32(&encoded, 0x1c), 92);
+        assert_eq!(read_i32(&encoded, 0x20), 1440);
+        assert_eq!(read_i32(&encoded, 0x24), 400);
+    }
+
+    #[test]
+    fn tuning_transaction_updates_all_four_fields() {
+        let adjustments = HdrAdjustments {
+            peak_brightness: 1000,
+            middle_gray: 42,
+            contrast: 12,
+            saturation: -8,
+        };
+        let original = sample_raw(true);
+        let tuned = encode_hdr_tuning(&original, &adjustments);
+        let mut transport = FakeTransport::new(vec![Ok(original), Ok(tuned)]);
+        let result = tune_with_transport(&mut transport, &adjustments).unwrap();
+        assert_eq!(result.after.peak_brightness, 1000);
+        assert_eq!(result.after.middle_gray, 42);
+        assert_eq!(result.after.contrast, 12);
+        assert_eq!(result.after.saturation, -8);
+        assert!(result.after.enabled);
+        assert_eq!(transport.writes, vec![tuned]);
+    }
+
+    #[test]
+    fn tuning_rejects_out_of_range_values_before_writing() {
+        let snapshot = parse_hdr_info(&sample_raw(false)).unwrap();
+        for adjustments in [
+            HdrAdjustments {
+                peak_brightness: 399,
+                middle_gray: 50,
+                contrast: 0,
+                saturation: 0,
+            },
+            HdrAdjustments {
+                peak_brightness: 1441,
+                middle_gray: 50,
+                contrast: 0,
+                saturation: 0,
+            },
+            HdrAdjustments {
+                peak_brightness: 1000,
+                middle_gray: 101,
+                contrast: 0,
+                saturation: 0,
+            },
+            HdrAdjustments {
+                peak_brightness: 1000,
+                middle_gray: 50,
+                contrast: -101,
+                saturation: 0,
+            },
+            HdrAdjustments {
+                peak_brightness: 1000,
+                middle_gray: 50,
+                contrast: 0,
+                saturation: 101,
+            },
+        ] {
+            assert!(validate_hdr_adjustments(&snapshot, &adjustments).is_err());
+        }
+    }
+
+    #[test]
+    fn tuning_readback_mismatch_restores_original_bytes() {
+        let adjustments = HdrAdjustments {
+            peak_brightness: 1000,
+            middle_gray: 42,
+            contrast: 12,
+            saturation: -8,
+        };
+        let original = sample_raw(false);
+        let wrong = sample_raw(false);
+        let mut transport = FakeTransport::new(vec![Ok(original), Ok(wrong), Ok(original)]);
+        assert_eq!(
+            tune_with_transport(&mut transport, &adjustments),
+            Err(AppError::VerificationFailed)
+        );
+        assert_eq!(transport.writes.len(), 2);
+        assert_eq!(transport.writes[1], original);
+    }
+
+    #[test]
     fn toggles_off_to_on() {
         let mut transport = FakeTransport::new(vec![Ok(sample_raw(false)), Ok(sample_raw(true))]);
         let result = toggle_with_transport(&mut transport).unwrap();
@@ -542,6 +822,15 @@ mod tests {
         }
         .validate()
         .is_err());
+        assert_eq!(
+            format_hotkey(Hotkey::console_default()),
+            "Ctrl+Alt+G"
+        );
+        let duplicate = Settings {
+            show_console_hotkey: Hotkey::default(),
+            ..Settings::default()
+        };
+        assert!(duplicate.validate().is_err());
     }
 
     #[test]

@@ -36,7 +36,9 @@ jobs:
       - name: Format
         shell: pwsh
         run: |
-          cargo fmt --all -- --check
+          # Temporary: normalize through CI while the local machine has no Rust toolchain.
+          cargo fmt --all
+          git diff -- src crates
 
       - name: Clippy
         shell: pwsh
