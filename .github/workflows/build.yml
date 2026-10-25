@@ -33,24 +33,10 @@ jobs:
           shared-key: rtx-hdr-switch
           cache-on-failure: true
 
-      - name: Refresh dependency lock
-        shell: pwsh
-        run: cargo generate-lockfile
-
       - name: Format
         shell: pwsh
         run: |
-          cargo fmt --all
           cargo fmt --all -- --check
-
-      - name: Upload formatted sources
-        uses: actions/upload-artifact@v4
-        with:
-          name: formatted-sources
-          path: |
-            src
-            crates
-          if-no-files-found: error
 
       - name: Clippy
         shell: pwsh
@@ -62,11 +48,11 @@ jobs:
 
       - name: Host release build
         shell: pwsh
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin RtxHdrSwitch
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-hdr-switch --bin RtxHdrSwitch
 
       - name: GPUI console release build
         shell: pwsh
-        run: cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc --bin RtxHdrSettings
+        run: cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-hdr-settings --bin RtxHdrSettings
 
       - name: Package
         shell: pwsh

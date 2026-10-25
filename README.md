@@ -61,8 +61,8 @@ cargo generate-lockfile
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
-cargo build --locked --release --target x86_64-pc-windows-msvc --bin RtxHdrSwitch
-cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc --bin RtxHdrSettings
+cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-hdr-switch --bin RtxHdrSwitch
+cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-hdr-settings --bin RtxHdrSettings
 ```
 
 交互式视觉原型位于 [`prototype/gpui-console.html`](prototype/gpui-console.html)，
