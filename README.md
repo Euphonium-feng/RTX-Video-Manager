@@ -36,6 +36,9 @@ App 自带的未公开 `nvcpl.dll` 接口，并严格锁定到以下文件：
 2. 解压并运行 `RtxHdrSwitch.exe`。
 3. 使用 `Ctrl+Alt+H` 切换 RTX Video HDR。
 
+手动启动会打开设置窗口；关闭设置窗口不会退出程序。程序必须继续驻留在通知区域，
+快捷键才会工作。`--background` 仅用于开机启动，启动时不显示设置窗口。
+
 程序只写入以下当前用户注册表位置：
 
 - `HKCU\Software\RTXHDRSwitch`

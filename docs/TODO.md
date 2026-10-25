@@ -18,6 +18,9 @@
 - `Ctrl+Alt+H` was registered by the final process (a competing registration
   returned Windows error 1409). Initial private memory was 5.37 MiB; after opening
   the UXD session it was 12.32 MiB.
+- Pixel comparison on a static SDR video showed the `0x318` path changed 32.5% of
+  pixels by more than 10 RGB levels; the unrelated NvBackend `TrueHDR` path changed
+  zero pixels.
 
 ## Pending
 

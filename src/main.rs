@@ -365,6 +365,8 @@ fn main() {
 }
 
 unsafe fn run() -> i32 {
+    let background = std::env::args_os()
+        .any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--background"));
     let instance = GetModuleHandleW(null());
     let taskbar_created_message =
         wm::RegisterWindowMessageW(wide(TASKBAR_CREATED_MESSAGE).as_ptr());
@@ -509,6 +511,9 @@ unsafe fn run() -> i32 {
     if let Some(warning) = startup_warning {
         log_line(&warning);
         show_message(hwnd, &warning, wm::MB_OK | wm::MB_ICONWARNING);
+    }
+    if !background {
+        show_settings_window(hwnd);
     }
 
     let mut message: wm::MSG = zeroed();
