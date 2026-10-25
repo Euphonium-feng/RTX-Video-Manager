@@ -24,6 +24,9 @@ App 自带的未公开 `nvcpl.dll` 接口，并严格锁定到以下文件：
 版本或哈希不匹配时，程序保持只读并禁止修改 HDR。NVIDIA App 更新后可能需要重新验证
 新的二进制与字段布局。
 
+程序要求 NVIDIA 显示设置服务正在运行，并会在独立的 STA COM 会话中连接该服务。
+服务不可用或接口状态异常时，程序拒绝写入 HDR。
+
 本项目不切换 Windows HDR，不修改 RTX Video Super Resolution，也不包含 Chrome
 扩展或视频内容自动识别。
 
@@ -44,10 +47,10 @@ App 自带的未公开 `nvcpl.dll` 接口，并严格锁定到以下文件：
 
 ```text
 cargo generate-lockfile
-cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build --release --target x86_64-pc-windows-msvc
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo build --locked --release --target x86_64-pc-windows-msvc
 ```
 
 项目文档位于 [`docs/`](docs/)。
