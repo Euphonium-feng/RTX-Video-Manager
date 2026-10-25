@@ -6,6 +6,10 @@ rust-version = "1.85"
 description = "GPUI control console for RTX Video HDR"
 publish = false
 
+[[bin]]
+name = "RtxHdrSettings"
+path = "src/main.rs"
+
 [dependencies]
 gpui-kit = "=0.8.0"
 rtx-hdr-switch = { path = "../.." }
@@ -18,6 +22,3 @@ windows-sys = { version = "=0.59.0", features = [
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ] }
-
-[dev-dependencies]
-gpui-kit = { version = "=0.8.0", features = ["test-support"] }
