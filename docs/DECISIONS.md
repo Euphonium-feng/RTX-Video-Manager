@@ -75,10 +75,9 @@ unpinned snapshot updates.
 
 ## ADR-009: One thread owns all IPC pipe I/O
 
-The named-pipe connection thread performs both reads and queued writes. The host
-message loop only enqueues `HostEvent` values; it never calls `WriteFile` on the
-connection handle. This avoids blocking the host when a synchronous pipe already has
-a pending read and keeps tray, hotkey, and HDR events responsive while the console is
-open.
+Both sides assign every operation on a named-pipe handle to one I/O thread. The host
+and GPUI threads only enqueue messages; they never call `ReadFile`/`WriteFile` on the
+connection handle. This avoids blocking a synchronous pipe that already has a pending
+operation and keeps tray, hotkey, HDR events, and the GUI handshake responsive.
 
 Rejected: writing from the host UI thread while the IPC thread blocks in `ReadFile`.

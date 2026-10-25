@@ -4,11 +4,12 @@ use rtx_hdr_switch::ipc::{
 use std::io::{self, Read, Write};
 use std::ptr::{null, null_mut};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, OPEN_EXISTING};
+use windows_sys::Win32::System::Pipes::PeekNamedPipe;
 
 const FILE_GENERIC_READ_WRITE: u32 = 0xC000_0000;
 
@@ -21,7 +22,6 @@ pub enum ClientEvent {
 
 pub struct IpcClient {
     commands: Sender<UiCommand>,
-    _handle: Arc<PipeHandle>,
 }
 
 impl IpcClient {
@@ -31,20 +31,12 @@ impl IpcClient {
         let (event_tx, event_rx) = mpsc::channel();
         let (command_tx, command_rx) = mpsc::channel();
 
-        let read_handle = handle.clone();
-        let read_events = event_tx.clone();
+        let io_handle = handle.clone();
         thread::Builder::new()
-            .name("rtx-hdr-ui-reader".into())
-            .spawn(move || read_loop(read_handle, read_events))
+            .name("rtx-hdr-ui-ipc".into())
+            .spawn(move || io_loop(io_handle, command_rx, event_tx))
             .map_err(|error| format!("无法启动控制台通信线程：{error}"))?;
-        crate::log_line("IPC reader thread started");
-
-        let write_handle = handle.clone();
-        thread::Builder::new()
-            .name("rtx-hdr-ui-writer".into())
-            .spawn(move || write_loop(write_handle, command_rx, event_tx))
-            .map_err(|error| format!("无法启动控制台通信写入线程：{error}"))?;
-        crate::log_line("IPC writer thread started");
+        crate::log_line("IPC I/O thread started");
 
         command_tx
             .send(UiCommand::Hello {
@@ -56,7 +48,6 @@ impl IpcClient {
         Ok((
             Self {
                 commands: command_tx,
-                _handle: handle,
             },
             event_rx,
         ))
@@ -111,11 +102,43 @@ fn connect_pipe() -> Result<HANDLE, String> {
     ))
 }
 
-fn read_loop(handle: Arc<PipeHandle>, events: Sender<ClientEvent>) {
-    crate::log_line("IPC reader loop entered");
+fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sender<ClientEvent>) {
+    crate::log_line("IPC I/O loop entered");
     let mut reader = PipeReader(handle.raw());
+    let mut writer = PipeWriter(handle.raw());
     let mut greeted = false;
     loop {
+        loop {
+            match commands.try_recv() {
+                Ok(command) => {
+                    crate::log_line("IPC writer received command");
+                    if let Err(error) = write_packet(&mut writer, &command) {
+                        crate::log_line(&format!("IPC writer failed: {error}"));
+                        let _ = events.send(ClientEvent::Disconnected(format!(
+                            "无法写入后台连接：{error}"
+                        )));
+                        return;
+                    }
+                    crate::log_line("IPC writer completed command");
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return,
+            }
+        }
+
+        let mut available = 0u32;
+        let peeked = unsafe {
+            PeekNamedPipe(handle.raw(), null_mut(), 0, null_mut(), &mut available, null_mut())
+        };
+        if peeked == 0 {
+            let _ = events.send(ClientEvent::Disconnected("后台连接已断开。".into()));
+            return;
+        }
+        if available == 0 {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
         let result = read_packet(&mut reader).and_then(|payload| {
             rtx_hdr_switch::ipc::decode::<HostEvent>(&payload)
                 .map_err(|error| IpcError::InvalidFrame(error.to_string()))
@@ -153,22 +176,6 @@ fn read_loop(handle: Arc<PipeHandle>, events: Sender<ClientEvent>) {
                 return;
             }
         }
-    }
-}
-
-fn write_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sender<ClientEvent>) {
-    crate::log_line("IPC writer loop entered");
-    let mut writer = PipeWriter(handle.raw());
-    while let Ok(command) = commands.recv() {
-        crate::log_line("IPC writer received command");
-        if let Err(error) = write_packet(&mut writer, &command) {
-            crate::log_line(&format!("IPC writer failed: {error}"));
-            let _ = events.send(ClientEvent::Disconnected(format!(
-                "无法写入后台连接：{error}"
-            )));
-            return;
-        }
-        crate::log_line("IPC writer completed command");
     }
 }
 

@@ -17,7 +17,8 @@ view over a local IPC contract.
   queue, and snapshot/event writer. A single connection thread owns every pipe read
   and write; the host main thread only enqueues outbound events.
 - `src/ipc.rs`: versioned IPC DTOs and length-prefixed JSON framing.
-- `crates/ui/`: `RtxHdrSettings.exe`, the GPUI console; it never links NvCpl.
+- `crates/ui/`: `RtxHdrSettings.exe`, the GPUI console; it never links NvCpl. Its
+  IPC worker also owns both directions of its pipe handle on one thread.
 - `assets/`: icon and manifest resources compiled into the executable.
 - `.github/workflows/build.yml`: formatting, lint, tests, Release build, packaging,
   and artifact upload.

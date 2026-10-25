@@ -33,6 +33,8 @@
   dependency-lock results.
 - Validate ADR-009 after the local acceptance run showed the host main thread stuck
   behind a synchronous named-pipe write while the IPC thread held a pending read.
+- Validate the GPUI-side single-I/O-thread change after the console handshake was
+  observed blocking on its own concurrent pipe read/write.
 - Download the artifact and verify the GPUI console opens, toggles HDR, saves
   settings, records a shortcut, reconnects, and exits completely on close.
 - Verify that tray, shortcut, native overlay, startup entry, single instance,
