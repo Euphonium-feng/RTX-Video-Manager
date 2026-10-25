@@ -31,7 +31,10 @@ setting at `0x318`; the final cloud artifact still needs end-to-end revalidation
 7. Interactive launches show the settings window; `--background` launches only the
    tray so the current-user startup entry stays silent.
 8. Successful toggles show a non-activating, topmost overlay at the bottom center
-   of the active monitor for 300 ms.
+   of the active monitor for 300 ms at 50% opacity.
+9. The settings window includes a direct HDR action button that follows the live
+   state and busy flag while using the same worker transaction as the tray and
+   shortcut.
 
 ## Glossary
 

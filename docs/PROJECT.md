@@ -13,6 +13,7 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 - Preserve the existing NVIDIA HDR tuning fields when toggling.
 - Show a brief bottom-center overlay on successful toggles that reports whether
   RTX Video HDR is on or off.
+- Provide a direct on/off button for RTX Video HDR in the settings window.
 - Refuse writes when the NVIDIA App/NvCpl build or HDR state is unsupported.
 - Require the NVIDIA UXD display service and an STA COM session before using the
   private NvCpl API.

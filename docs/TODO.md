@@ -21,14 +21,15 @@
 - Pixel comparison on a static SDR video showed the `0x318` path changed 32.5% of
   pixels by more than 10 RGB levels; the unrelated NvBackend `TrueHDR` path changed
   zero pixels.
-- The final overlay artifact showed a centered 360 x 64 capsule at
-  `(844, 1040)`, with complete `RTX HDR 已开启` / `已关闭` text and observed hide
-  times of 230-290 ms after detection.
 
 ## Pending
 
 - Visually confirm the Chrome brightness/color difference and measure activation
   latency from the physical shortcut.
+- Verify the compact 240 x 48 overlay, 50% opacity, full text, position, and
+  300 ms duration on the final artifact.
+- Verify the settings-window HDR button label, disabled state, toggle behavior,
+  overlay feedback, and live refresh after a shortcut/tray toggle.
 - Verify tray icons and menus, shortcut recording, restart persistence, single
   instance opening settings, Explorer restart, startup entry, rollback injection,
   no-HDR-display/Windows-HDR-off/Surround states, and idle CPU.

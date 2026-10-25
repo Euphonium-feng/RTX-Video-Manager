@@ -70,9 +70,10 @@ const RECORD_TIMER_ID: usize = 2;
 const OVERLAY_TIMER_ID: usize = 1;
 const TRAY_ICON_ID: u32 = 1;
 const OVERLAY_DURATION_MS: u32 = 300;
-const OVERLAY_WIDTH: i32 = 360;
-const OVERLAY_HEIGHT: i32 = 64;
-const OVERLAY_BOTTOM_MARGIN: i32 = 48;
+const OVERLAY_WIDTH: i32 = 240;
+const OVERLAY_HEIGHT: i32 = 48;
+const OVERLAY_BOTTOM_MARGIN: i32 = 36;
+const OVERLAY_ALPHA: u8 = 128;
 
 const CMD_TOGGLE: u32 = 1001;
 const CMD_SETTINGS: u32 = 1002;
@@ -84,6 +85,7 @@ const CMD_EXIT: u32 = 1006;
 const ID_RECORD: u32 = 2001;
 const ID_STARTUP: u32 = 2002;
 const ID_NOTIFICATIONS: u32 = 2003;
+const ID_TOGGLE_HDR: u32 = 2004;
 const ID_SAVE: u32 = 2100;
 const ID_CANCEL: u32 = 2101;
 
@@ -367,6 +369,7 @@ struct SettingsWindowState {
     capture_keys: Vec<u32>,
     hotkey_label: HWND,
     record_button: HWND,
+    toggle_button: HWND,
     startup_check: HWND,
     notification_check: HWND,
     save_button: HWND,
@@ -580,7 +583,10 @@ unsafe fn show_toggle_overlay(enabled: bool) {
         let title = wide("RTX HDR");
         let instance = GetModuleHandleW(null());
         hwnd = wm::CreateWindowExW(
-            wm::WS_EX_NOACTIVATE | wm::WS_EX_TOOLWINDOW | wm::WS_EX_TOPMOST,
+            wm::WS_EX_LAYERED
+                | wm::WS_EX_NOACTIVATE
+                | wm::WS_EX_TOOLWINDOW
+                | wm::WS_EX_TOPMOST,
             class.as_ptr(),
             title.as_ptr(),
             wm::WS_POPUP,
@@ -621,7 +627,8 @@ unsafe fn show_toggle_overlay(enabled: bool) {
     let x = monitor_info.rcWork.left + (work_width - width) / 2;
     let y = monitor_info.rcWork.bottom - height - margin;
 
-    let radius = scale_for_dpi(18, dpi);
+    wm::SetLayeredWindowAttributes(hwnd, 0, OVERLAY_ALPHA, wm::LWA_ALPHA);
+    let radius = scale_for_dpi(14, dpi);
     let region = gdi::CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius);
     if !region.is_null() && gdi::SetWindowRgn(hwnd, region, 1) == 0 {
         gdi::DeleteObject(region);
@@ -672,9 +679,9 @@ unsafe fn paint_overlay(hwnd: HWND) {
     if !dot_brush.is_null() {
         let old_brush = gdi::SelectObject(hdc, dot_brush);
         let old_pen = gdi::SelectObject(hdc, gdi::GetStockObject(gdi::NULL_PEN));
-        let center_x = scale_for_dpi(26, dpi);
+        let center_x = scale_for_dpi(19, dpi);
         let center_y = client.bottom / 2;
-        let radius = scale_for_dpi(5, dpi);
+        let radius = scale_for_dpi(4, dpi);
         gdi::Ellipse(
             hdc,
             center_x - radius,
@@ -689,7 +696,7 @@ unsafe fn paint_overlay(hwnd: HWND) {
 
     let face = wide("Microsoft YaHei UI");
     let font = gdi::CreateFontW(
-        -scale_for_dpi(19, dpi),
+        -scale_for_dpi(15, dpi),
         0,
         0,
         0,
@@ -712,13 +719,13 @@ unsafe fn paint_overlay(hwnd: HWND) {
     gdi::SetBkMode(hdc, gdi::TRANSPARENT as i32);
     gdi::SetTextColor(hdc, overlay_rgb(245, 247, 250));
     let text = wide(if enabled {
-        "RTX HDR 已开启"
+        "RTX HDR 开启"
     } else {
-        "RTX HDR 已关闭"
+        "RTX HDR 关闭"
     });
     let mut text_rect = client;
-    text_rect.left = scale_for_dpi(46, dpi);
-    text_rect.right -= scale_for_dpi(14, dpi);
+    text_rect.left = scale_for_dpi(34, dpi);
+    text_rect.right -= scale_for_dpi(10, dpi);
     gdi::DrawTextW(
         hdc,
         text.as_ptr(),
@@ -1078,6 +1085,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                 if critical {
                     show_message(hwnd, "RTX 视频 HDR", wm::MB_OK | wm::MB_ICONERROR);
                 }
+                refresh_settings_toggle_button();
             }
             WorkerEvent::Toggle(result) => {
                 let (notification, critical, overlay) = if let Some(state) = APP_STATE.get() {
@@ -1139,6 +1147,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                         wm::MB_OK | wm::MB_ICONERROR,
                     );
                 }
+                refresh_settings_toggle_button();
             }
         }
     }
@@ -1431,6 +1440,7 @@ unsafe fn open_settings(owner: HWND) {
         capture_keys: capture_keys(),
         hotkey_label: null_mut(),
         record_button: null_mut(),
+        toggle_button: null_mut(),
         startup_check: null_mut(),
         notification_check: null_mut(),
         save_button: null_mut(),
@@ -1476,6 +1486,55 @@ unsafe fn open_settings(owner: HWND) {
     let _ = wm::SetForegroundWindow(hwnd);
 }
 
+fn settings_toggle_presentation() -> (&'static str, bool) {
+    let Some(shared) = APP_STATE.get() else {
+        return ("正在读取...", false);
+    };
+    let state = shared.lock().unwrap_or_else(|p| p.into_inner());
+    if state.busy {
+        return ("正在切换...", false);
+    }
+    match &state.hdr {
+        HdrUi::Loading => ("正在读取...", false),
+        HdrUi::Ready(snapshot) if !snapshot.supported => ("HDR 不可用", false),
+        HdrUi::Ready(snapshot) if snapshot.enabled => ("关闭 RTX HDR", true),
+        HdrUi::Ready(_) => ("开启 RTX HDR", true),
+        HdrUi::Error(_) => ("HDR 不可用", false),
+    }
+}
+
+unsafe fn refresh_settings_toggle_button() {
+    let settings_window = APP_STATE
+        .get()
+        .map(|state| {
+            state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .settings_window
+        })
+        .unwrap_or(0);
+    if settings_window == 0 {
+        return;
+    }
+    let settings_hwnd = settings_window as HWND;
+    if wm::IsWindow(settings_hwnd) == 0 {
+        return;
+    }
+    let state_ptr =
+        wm::GetWindowLongPtrW(settings_hwnd, wm::GWLP_USERDATA) as *mut SettingsWindowState;
+    if state_ptr.is_null() {
+        return;
+    }
+    let button = (*state_ptr).toggle_button;
+    if button.is_null() || wm::IsWindow(button) == 0 {
+        return;
+    }
+    let (label, enabled) = settings_toggle_presentation();
+    let label = wide(label);
+    let _ = wm::SetWindowTextW(button, label.as_ptr());
+    let _ = EnableWindow(button, if enabled { 1 } else { 0 });
+}
+
 unsafe fn create_settings_controls(hwnd: HWND, state: &mut SettingsWindowState) {
     let dpi = GetDpiForWindow(hwnd).max(96) as i32;
     let font = gdi::GetStockObject(gdi::DEFAULT_GUI_FONT);
@@ -1486,10 +1545,23 @@ unsafe fn create_settings_controls(hwnd: HWND, state: &mut SettingsWindowState) 
         wm::WS_CHILD | wm::WS_VISIBLE,
         scale_for_dpi(20, dpi),
         scale_for_dpi(18, dpi),
-        scale_for_dpi(420, dpi),
+        scale_for_dpi(250, dpi),
         scale_for_dpi(28, dpi),
         0,
     );
+    let (toggle_text, toggle_enabled) = settings_toggle_presentation();
+    state.toggle_button = create_control(
+        hwnd,
+        "BUTTON",
+        toggle_text,
+        wm::WS_CHILD | wm::WS_VISIBLE | wm::WS_TABSTOP | wm::BS_PUSHBUTTON as u32,
+        scale_for_dpi(300, dpi),
+        scale_for_dpi(14, dpi),
+        scale_for_dpi(160, dpi),
+        scale_for_dpi(32, dpi),
+        ID_TOGGLE_HDR,
+    );
+    let _ = EnableWindow(state.toggle_button, if toggle_enabled { 1 } else { 0 });
     let label = create_control(
         hwnd,
         "STATIC",
@@ -1581,6 +1653,7 @@ unsafe fn create_settings_controls(hwnd: HWND, state: &mut SettingsWindowState) 
 
     for control in [
         title,
+        state.toggle_button,
         label,
         state.hotkey_label,
         state.record_button,
@@ -1651,6 +1724,10 @@ unsafe extern "system" fn settings_wndproc(
             let command = wparam as u32 & 0xffff;
             match command {
                 ID_RECORD => start_recording(hwnd, &mut *state_ptr),
+                ID_TOGGLE_HDR => {
+                    request_toggle((*state_ptr).owner, false);
+                    refresh_settings_toggle_button();
+                }
                 ID_SAVE => save_settings_from_window(hwnd, &mut *state_ptr),
                 ID_CANCEL => {
                     wm::DestroyWindow(hwnd);
