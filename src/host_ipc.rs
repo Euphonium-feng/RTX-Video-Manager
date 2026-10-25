@@ -190,16 +190,8 @@ fn serve_client(pipe: HANDLE) -> bool {
         }
 
         let mut available = 0u32;
-        let peeked = unsafe {
-            PeekNamedPipe(
-                pipe,
-                null_mut(),
-                0,
-                null_mut(),
-                &mut available,
-                null_mut(),
-            )
-        };
+        let peeked =
+            unsafe { PeekNamedPipe(pipe, null_mut(), 0, null_mut(), &mut available, null_mut()) };
         if peeked == 0 {
             return true;
         }
