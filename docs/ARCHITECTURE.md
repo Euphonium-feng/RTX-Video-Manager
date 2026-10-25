@@ -14,7 +14,8 @@ view over a local IPC contract.
 - `src/main.rs`: Win32 application entry, hidden message window, tray icon, global
   hotkey, native overlay, registry integration, NVIDIA worker, and console lifecycle.
 - `src/host_ipc.rs`: local named-pipe server, same-user/session validation, command
-  queue, and snapshot/event writer.
+  queue, and snapshot/event writer. A single connection thread owns every pipe read
+  and write; the host main thread only enqueues outbound events.
 - `src/ipc.rs`: versioned IPC DTOs and length-prefixed JSON framing.
 - `crates/ui/`: `RtxHdrSettings.exe`, the GPUI console; it never links NvCpl.
 - `assets/`: icon and manifest resources compiled into the executable.

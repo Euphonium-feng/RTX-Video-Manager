@@ -72,3 +72,13 @@ for design approval; production remains native GPUI.
 
 Rejected: independent `gpui-component` versioning, a WebView production UI, and
 unpinned snapshot updates.
+
+## ADR-009: One thread owns all IPC pipe I/O
+
+The named-pipe connection thread performs both reads and queued writes. The host
+message loop only enqueues `HostEvent` values; it never calls `WriteFile` on the
+connection handle. This avoids blocking the host when a synchronous pipe already has
+a pending read and keeps tray, hotkey, and HDR events responsive while the console is
+open.
+
+Rejected: writing from the host UI thread while the IPC thread blocks in `ReadFile`.

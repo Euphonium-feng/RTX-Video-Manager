@@ -19,8 +19,8 @@ use windows_sys::Win32::Security::{
 use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile, PIPE_ACCESS_DUPLEX};
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeClientProcessId,
-    GetNamedPipeClientSessionId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
-    PIPE_WAIT,
+    GetNamedPipeClientSessionId, PeekNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
+    PIPE_TYPE_BYTE, PIPE_WAIT,
 };
 use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows_sys::Win32::System::Threading::{
@@ -46,8 +46,8 @@ struct HostTarget {
 
 static HOST: OnceLock<Mutex<Option<HostTarget>>> = OnceLock::new();
 static EVENTS: OnceLock<Mutex<VecDeque<IpcEvent>>> = OnceLock::new();
+static OUTBOUND: OnceLock<Mutex<VecDeque<HostEvent>>> = OnceLock::new();
 static CONNECTION: OnceLock<Mutex<usize>> = OnceLock::new();
-static WRITE_LOCK: Mutex<()> = Mutex::new(());
 static STOP: AtomicBool = AtomicBool::new(true);
 
 pub fn start(hwnd: usize, message: u32) {
@@ -75,19 +75,12 @@ pub fn has_client() -> bool {
 }
 
 pub fn send(event: &HostEvent) -> bool {
-    let handle = *lock(&CONNECTION);
-    if handle == 0 {
+    if *lock(&CONNECTION) == 0 {
         return false;
     }
-    let _guard = WRITE_LOCK
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
-    let result = write_packet(&mut PipeWriter(handle as HANDLE), event);
-    drop(_guard);
-    if result.is_err() {
-        clear_connection(handle as HANDLE);
-        return false;
-    }
+    // The connection thread owns all pipe I/O. A synchronous pipe handle must
+    // not have a blocking read and write issued from different threads.
+    lock(&OUTBOUND).push_back(event.clone());
     true
 }
 
@@ -98,6 +91,7 @@ pub fn take_events() -> Vec<IpcEvent> {
 fn initialize() {
     let _ = HOST.set(Mutex::new(None));
     let _ = EVENTS.set(Mutex::new(VecDeque::new()));
+    let _ = OUTBOUND.set(Mutex::new(VecDeque::new()));
     let _ = CONNECTION.set(Mutex::new(0));
 }
 
@@ -141,12 +135,7 @@ fn server_loop() {
         }
 
         set_connection(pipe);
-        if !serve_client(pipe) {
-            let _ = send(&HostEvent::Error(UiError {
-                message: "控制台与后台通信异常，请重新打开控制台。".into(),
-                critical: false,
-            }));
-        }
+        let _ = serve_client(pipe);
         clear_connection(pipe);
         unsafe {
             DisconnectNamedPipe(pipe);
@@ -165,32 +154,71 @@ fn serve_client(pipe: HANDLE) -> bool {
     match first {
         UiCommand::Hello { protocol_version } if protocol_version == PROTOCOL_VERSION => {}
         UiCommand::Hello { protocol_version } => {
-            let _ = send(&HostEvent::Error(UiError {
-                message: format!(
-                    "控制台协议版本 {protocol_version} 与后台 {PROTOCOL_VERSION} 不匹配，请重新解压发布包。"
-                ),
-                critical: true,
-            }));
+            let _ = write_event(
+                pipe,
+                &HostEvent::Error(UiError {
+                    message: format!(
+                        "控制台协议版本 {protocol_version} 与后台 {PROTOCOL_VERSION} 不匹配，请重新解压发布包。"
+                    ),
+                    critical: true,
+                }),
+            );
             return false;
         }
         _ => return false,
     }
 
-    if !send(&HostEvent::Hello {
-        protocol_version: PROTOCOL_VERSION,
-        app_version: env!("CARGO_PKG_VERSION").into(),
-    }) {
+    if write_event(
+        pipe,
+        &HostEvent::Hello {
+            protocol_version: PROTOCOL_VERSION,
+            app_version: env!("CARGO_PKG_VERSION").into(),
+        },
+    )
+    .is_err()
+    {
         return false;
     }
     post_event(IpcEvent::Connected);
 
-    loop {
+    while !STOP.load(Ordering::Acquire) {
+        let outbound = lock(&OUTBOUND).drain(..).collect::<Vec<_>>();
+        for event in outbound {
+            if write_event(pipe, &event).is_err() {
+                return true;
+            }
+        }
+
+        let mut available = 0u32;
+        let peeked = unsafe {
+            PeekNamedPipe(
+                pipe,
+                null_mut(),
+                0,
+                null_mut(),
+                &mut available,
+                null_mut(),
+            )
+        };
+        if peeked == 0 {
+            return true;
+        }
+        if available == 0 {
+            unsafe { Sleep(20) };
+            continue;
+        }
+
         match read_command(&mut reader) {
             Ok(UiCommand::Hello { .. }) => {}
             Ok(command) => post_event(IpcEvent::Command(command)),
             Err(_) => return true,
         }
     }
+    true
+}
+
+fn write_event(pipe: HANDLE, event: &HostEvent) -> Result<(), IpcError> {
+    write_packet(&mut PipeWriter(pipe), event)
 }
 
 fn read_command(reader: &mut impl Read) -> Result<UiCommand, IpcError> {

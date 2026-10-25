@@ -13,6 +13,8 @@ use rtx_hdr_switch::{
     AppError, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_SHA256_HEX, Settings,
     format_hotkey,
 };
+use std::fs::OpenOptions;
+use std::io::Write as _;
 use std::ptr::null;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -77,11 +79,13 @@ impl ConsoleApp {
     ) {
         match connection {
             Ok((client, events)) => {
+                log_line("console connected to host");
                 self.ipc = Some(client);
                 self.connection_error = None;
                 self.start_event_pump(events, cx);
             }
             Err(error) => {
+                log_line(&format!("console connection failed: {error}"));
                 self.ipc = None;
                 self.connection_error = Some(error);
             }
@@ -130,10 +134,12 @@ impl ConsoleApp {
     fn handle_client_event(&mut self, event: ClientEvent, cx: &mut Context<Self>) {
         match event {
             ClientEvent::Connected => {
+                log_line("console IPC handshake complete");
                 self.connection_error = None;
                 self.transient_error = None;
             }
             ClientEvent::Disconnected(message) => {
+                log_line(&format!("console disconnected: {message}"));
                 self.connection_error = Some(message);
                 self.recording = false;
                 self.saving = false;
@@ -195,6 +201,7 @@ impl ConsoleApp {
     }
 
     fn toggle_hdr(&mut self, cx: &mut Context<Self>) {
+        log_line("console requested HDR toggle");
         self.transient_error = None;
         self.send(UiCommand::ToggleHdr, cx);
     }
@@ -274,6 +281,7 @@ impl ConsoleApp {
             return;
         }
         self.saving = true;
+        log_line("console requested settings save");
         self.saved_note = None;
         self.transient_error = None;
         let settings = self.draft.clone();
@@ -1071,6 +1079,7 @@ fn main() {
     }
 
     let initial_connection = IpcClient::connect_retry();
+    log_line("GPUI console starting");
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
@@ -1094,6 +1103,28 @@ fn main() {
 
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn log_line(text: &str) {
+    let Some(base) = std::env::var_os("LOCALAPPDATA") else {
+        return;
+    };
+    let directory = std::path::PathBuf::from(base).join("RtxHdrSwitch");
+    let _ = std::fs::create_dir_all(&directory);
+    let path = directory.join("rtx-hdr-settings.log");
+    if std::fs::metadata(&path)
+        .map(|metadata| metadata.len() > 1_048_576)
+        .unwrap_or(false)
+    {
+        let _ = std::fs::remove_file(&path);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(file, "[{timestamp}] {text}");
+    }
 }
 
 #[cfg(test)]

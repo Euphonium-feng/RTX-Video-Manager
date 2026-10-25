@@ -990,6 +990,7 @@ unsafe fn handle_ipc_events(hwnd: HWND) {
     for event in host_ipc::take_events() {
         match event {
             IpcEvent::Connected => {
+                log_line("console IPC connected");
                 let page = if let Some(state) = APP_STATE.get() {
                     let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
                     let page = state.pending_page;
@@ -999,6 +1000,7 @@ unsafe fn handle_ipc_events(hwnd: HWND) {
                     UiPage::Console
                 };
                 send_ui_snapshot();
+                log_line("initial console snapshot queued");
                 let _ = send_ui_event(HostEvent::ActivatePage { page });
                 request_read(hwnd);
             }
@@ -1211,6 +1213,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
     for event in events {
         match event {
             WorkerEvent::Read(result) => {
+                log_line("NVIDIA state read completed");
                 let (notification, critical) = if let Some(state) = APP_STATE.get() {
                     let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                     match result {

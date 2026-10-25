@@ -31,6 +31,8 @@
 
 - Wait for a green dual-EXE cloud run and inspect compile, Clippy, formatting, and
   dependency-lock results.
+- Validate ADR-009 after the local acceptance run showed the host main thread stuck
+  behind a synchronous named-pipe write while the IPC thread held a pending read.
 - Download the artifact and verify the GPUI console opens, toggles HDR, saves
   settings, records a shortcut, reconnects, and exits completely on close.
 - Verify that tray, shortcut, native overlay, startup entry, single instance,
