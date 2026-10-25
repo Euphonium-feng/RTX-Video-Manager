@@ -19,7 +19,8 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use windows_sys::core::{GUID, PCWSTR};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, SetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
+    CloseHandle, FreeLibrary, GetLastError, SetLastError, HINSTANCE, HWND, LPARAM, LRESULT,
+    WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi as gdi;
 use windows_sys::Win32::Security::WinTrust::{
@@ -28,9 +29,7 @@ use windows_sys::Win32::Security::WinTrust::{
     WTD_SAFER_FLAG, WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY, WTD_UICONTEXT_EXECUTE,
     WTD_UI_NONE,
 };
-use windows_sys::Win32::System::LibraryLoader::{
-    FreeLibrary, GetModuleHandleW, GetProcAddress, LoadLibraryExW,
-};
+use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryExW};
 use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
     RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD,
@@ -40,7 +39,7 @@ use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::Controls::BST_CHECKED;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetAsyncKeyState, RegisterHotKey, UnregisterHotKey,
+    EnableWindow, GetAsyncKeyState, RegisterHotKey, SetFocus, UnregisterHotKey,
 };
 use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_ERROR, NIIF_INFO,
@@ -123,6 +122,7 @@ impl Icons {
         let handle = match state {
             HdrUi::Ready(snapshot) if snapshot.supported && snapshot.enabled => self.on,
             HdrUi::Ready(snapshot) if snapshot.supported => self.off,
+            HdrUi::Ready(_) => self.off,
             HdrUi::Error(_) => self.error,
             HdrUi::Loading => self.off,
         };
@@ -780,9 +780,10 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                     state.busy = false;
                     match result {
                         Ok(outcome) => {
+                            let enabled = outcome.after.enabled;
                             state.hdr = HdrUi::Ready(outcome.after);
                             state.last_error = None;
-                            let text = if outcome.after.enabled {
+                            let text = if enabled {
                                 "RTX 视频 HDR 已开启".to_string()
                             } else {
                                 "RTX 视频 HDR 已关闭".to_string()
@@ -1158,7 +1159,7 @@ unsafe fn open_settings(owner: HWND) {
         state.settings_window = hwnd as usize;
     }
     let _ = wm::ShowWindow(hwnd, wm::SW_SHOWNORMAL);
-    let _ = wm::UpdateWindow(hwnd);
+    let _ = gdi::UpdateWindow(hwnd);
     let _ = wm::SetForegroundWindow(hwnd);
 }
 
@@ -1291,7 +1292,7 @@ unsafe fn create_settings_controls(hwnd: HWND, state: &mut SettingsWindowState) 
         0,
     );
     update_hotkey_text(state);
-    let _ = wm::SetFocus(state.save_button);
+    let _ = SetFocus(state.save_button);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1397,7 +1398,7 @@ unsafe fn start_recording(hwnd: HWND, state: &mut SettingsWindowState) {
     let text = wide("请按快捷键...");
     let _ = wm::SetWindowTextW(state.record_button, text.as_ptr());
     let _ = EnableWindow(state.save_button, 0);
-    let _ = wm::SetFocus(hwnd);
+    let _ = SetFocus(hwnd);
     wm::SetTimer(hwnd, RECORD_TIMER_ID, 30, None);
 }
 
