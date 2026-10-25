@@ -4,7 +4,7 @@ mod ipc_client;
 
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar};
+use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
