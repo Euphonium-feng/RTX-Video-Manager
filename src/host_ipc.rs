@@ -125,7 +125,9 @@ fn server_loop() {
             }
         }
 
+        crate::log_line("IPC pipe connected");
         if !same_user_and_session(pipe) {
+            crate::log_line("IPC client rejected by identity validation");
             unsafe {
                 DisconnectNamedPipe(pipe);
                 CloseHandle(pipe);
@@ -134,6 +136,7 @@ fn server_loop() {
             continue;
         }
 
+        crate::log_line("IPC client identity validated");
         set_connection(pipe);
         let _ = serve_client(pipe);
         clear_connection(pipe);
@@ -149,8 +152,10 @@ fn serve_client(pipe: HANDLE) -> bool {
     let mut reader = PipeReader(pipe);
     let first = read_command(&mut reader);
     let Ok(first) = first else {
+        crate::log_line("IPC handshake read failed");
         return false;
     };
+    crate::log_line("IPC handshake received");
     match first {
         UiCommand::Hello { protocol_version } if protocol_version == PROTOCOL_VERSION => {}
         UiCommand::Hello { protocol_version } => {
@@ -177,9 +182,12 @@ fn serve_client(pipe: HANDLE) -> bool {
     )
     .is_err()
     {
+        crate::log_line("IPC hello write failed");
         return false;
     }
+    crate::log_line("IPC hello sent");
     post_event(IpcEvent::Connected);
+    crate::log_line("IPC connected event posted");
 
     while !STOP.load(Ordering::Acquire) {
         let outbound = lock(&OUTBOUND).drain(..).collect::<Vec<_>>();
@@ -193,6 +201,7 @@ fn serve_client(pipe: HANDLE) -> bool {
         let peeked =
             unsafe { PeekNamedPipe(pipe, null_mut(), 0, null_mut(), &mut available, null_mut()) };
         if peeked == 0 {
+            crate::log_line("IPC peek failed; disconnecting");
             return true;
         }
         if available == 0 {
@@ -203,7 +212,10 @@ fn serve_client(pipe: HANDLE) -> bool {
         match read_command(&mut reader) {
             Ok(UiCommand::Hello { .. }) => {}
             Ok(command) => post_event(IpcEvent::Command(command)),
-            Err(_) => return true,
+            Err(_) => {
+                crate::log_line("IPC client disconnected");
+                return true;
+            }
         }
     }
     true
@@ -222,32 +234,38 @@ fn same_user_and_session(pipe: HANDLE) -> bool {
     unsafe {
         let mut client_pid = 0u32;
         if GetNamedPipeClientProcessId(pipe, &mut client_pid) == 0 {
+            crate::log_line("GetNamedPipeClientProcessId failed");
             return false;
         }
         let mut client_session = 0u32;
         if GetNamedPipeClientSessionId(pipe, &mut client_session) == 0 {
+            crate::log_line("GetNamedPipeClientSessionId failed");
             return false;
         }
         let mut current_session = 0u32;
         if ProcessIdToSessionId(GetCurrentProcessId(), &mut current_session) == 0
             || current_session != client_session
         {
+            crate::log_line("IPC client session mismatch");
             return false;
         }
 
         let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, client_pid);
         if process.is_null() {
+            crate::log_line("OpenProcess(client) failed");
             return false;
         }
         let mut client_token: HANDLE = null_mut();
         let process_token_ok = OpenProcessToken(process, TOKEN_QUERY, &mut client_token) != 0;
         CloseHandle(process);
         if !process_token_ok {
+            crate::log_line("OpenProcessToken(client) failed");
             return false;
         }
 
         let mut current_token: HANDLE = null_mut();
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut current_token) == 0 {
+            crate::log_line("OpenProcessToken(current) failed");
             CloseHandle(client_token);
             return false;
         }
