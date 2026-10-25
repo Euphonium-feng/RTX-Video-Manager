@@ -33,6 +33,10 @@ jobs:
           shared-key: rtx-hdr-switch
           cache-on-failure: true
 
+      - name: Refresh dependency lock
+        shell: pwsh
+        run: cargo generate-lockfile
+
       - name: Format
         shell: pwsh
         run: |
