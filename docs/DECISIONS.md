@@ -37,3 +37,14 @@ Evidence: on 2026-10-25 the full `0x318` transaction produced `active=1` during
 Chrome playback and returned to `active=0` after restoring the original state.
 Rejected: treating `SetSetting`/`Execute` success alone as proof that the feature is
 active, or falling back to Windows HDR.
+
+## ADR-006: Native 300 ms toggle overlay
+
+Show a small native Win32 popup at the bottom center of the active monitor after a
+successful toggle. The window is topmost, uses a rounded custom-drawn capsule, and
+uses `WS_EX_NOACTIVATE` plus `SW_SHOWNOACTIVATE` so the shortcut does not disturb
+the foreground video. Hide it with a 300 ms timer.
+
+Rejected: Windows toast notifications as the only feedback because notification
+settings and Focus Assist can suppress them, and an HTML/WebView overlay because it
+would add substantial runtime weight.

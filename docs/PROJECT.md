@@ -11,6 +11,8 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 - Default shortcut: `Ctrl+Alt+H`; allow the user to record a different shortcut.
 - Toggle only RTX Video HDR. Do not toggle Windows HDR or RTX Video Super Resolution.
 - Preserve the existing NVIDIA HDR tuning fields when toggling.
+- Show a brief bottom-center overlay on successful toggles that reports whether
+  RTX Video HDR is on or off.
 - Refuse writes when the NVIDIA App/NvCpl build or HDR state is unsupported.
 - Require the NVIDIA UXD display service and an STA COM session before using the
   private NvCpl API.

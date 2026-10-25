@@ -30,6 +30,8 @@ setting at `0x318`; the final cloud artifact still needs end-to-end revalidation
 6. Worker results return to the tray through posted window messages.
 7. Interactive launches show the settings window; `--background` launches only the
    tray so the current-user startup entry stays silent.
+8. Successful toggles show a non-activating, topmost overlay at the bottom center
+   of the active monitor for 300 ms.
 
 ## Glossary
 

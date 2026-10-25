@@ -26,6 +26,8 @@
 
 - Visually confirm the Chrome brightness/color difference and measure activation
   latency from the physical shortcut.
+- Verify the new bottom-center overlay position, 300 ms duration, focus behavior,
+  and both enabled/disabled text states on the final artifact.
 - Verify tray icons and menus, shortcut recording, restart persistence, single
   instance opening settings, Explorer restart, startup entry, rollback injection,
   no-HDR-display/Windows-HDR-off/Surround states, and idle CPU.

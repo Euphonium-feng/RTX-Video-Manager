@@ -18,7 +18,8 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use windows_sys::core::{GUID, PCWSTR};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, FreeLibrary, GetLastError, SetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
+    CloseHandle, FreeLibrary, GetLastError, SetLastError, HINSTANCE, HWND, LPARAM, LRESULT, RECT,
+    WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi as gdi;
 use windows_sys::Win32::Security::WinTrust::{
@@ -49,6 +50,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{HICON, HMENU};
 const APP_NAME: &str = "RTX HDR 开关";
 const MAIN_CLASS: &str = "RtxHdrSwitch.MainWindow.v1";
 const SETTINGS_CLASS: &str = "RtxHdrSwitch.SettingsWindow.v1";
+const OVERLAY_CLASS: &str = "RtxHdrSwitch.Overlay.v1";
 const MUTEX_NAME: &str = r"Local\RtxHdrSwitch.SingleInstance.v1";
 const OPEN_SETTINGS_MESSAGE: &str = "RtxHdrSwitch.OpenSettings.v1";
 const TASKBAR_CREATED_MESSAGE: &str = "TaskbarCreated";
@@ -65,7 +67,9 @@ const WM_ACTIVATE: u32 = 0x0006;
 const HOTKEY_ID: i32 = 1;
 const REFRESH_TIMER_ID: usize = 1;
 const RECORD_TIMER_ID: usize = 2;
+const OVERLAY_TIMER_ID: usize = 1;
 const TRAY_ICON_ID: u32 = 1;
+const OVERLAY_DURATION_MS: u32 = 300;
 
 const CMD_TOGGLE: u32 = 1001;
 const CMD_SETTINGS: u32 = 1002;
@@ -88,6 +92,7 @@ const LOAD_WITH_ALTERED_SEARCH_PATH: u32 = 0x0000_0008;
 
 static APP_STATE: OnceLock<Mutex<AppState>> = OnceLock::new();
 static PENDING_EVENTS: OnceLock<Mutex<VecDeque<WorkerEvent>>> = OnceLock::new();
+static OVERLAY_STATE: OnceLock<Mutex<OverlayState>> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 enum HdrUi {
@@ -141,6 +146,11 @@ struct AppState {
     last_error: Option<String>,
     taskbar_created_message: u32,
     open_settings_message: u32,
+}
+
+struct OverlayState {
+    hwnd: usize,
+    enabled: bool,
 }
 
 enum WorkerCommand {
@@ -395,6 +405,7 @@ unsafe fn run() -> i32 {
     let cursor = wm::LoadCursorW(null_mut(), wm::IDC_ARROW);
     let class_name = wide(MAIN_CLASS);
     let settings_class_name = wide(SETTINGS_CLASS);
+    let overlay_class_name = wide(OVERLAY_CLASS);
 
     if !register_window_class(
         &class_name,
@@ -430,8 +441,28 @@ unsafe fn run() -> i32 {
         CloseHandle(mutex);
         return 1;
     }
+    if !register_window_class(
+        &overlay_class_name,
+        Some(overlay_wndproc),
+        icon_on,
+        cursor,
+        null_mut(),
+        wm::CS_HREDRAW | wm::CS_VREDRAW,
+        instance,
+    ) {
+        log_line(&format!(
+            "RegisterClassExW(overlay) failed: {}",
+            GetLastError()
+        ));
+        CloseHandle(mutex);
+        return 1;
+    }
 
     let _ = PENDING_EVENTS.set(Mutex::new(VecDeque::new()));
+    let _ = OVERLAY_STATE.set(Mutex::new(OverlayState {
+        hwnd: 0,
+        enabled: false,
+    }));
     let _ = APP_STATE.set(Mutex::new(AppState {
         settings: settings.clone(),
         hdr: HdrUi::Loading,
@@ -513,7 +544,7 @@ unsafe fn run() -> i32 {
         show_message(hwnd, &warning, wm::MB_OK | wm::MB_ICONWARNING);
     }
     if !background {
-        show_settings_window(hwnd);
+        open_settings(hwnd);
     }
 
     let mut message: wm::MSG = zeroed();
@@ -528,6 +559,206 @@ unsafe fn run() -> i32 {
 
     CloseHandle(mutex);
     0
+}
+
+fn overlay_rgb(red: u8, green: u8, blue: u8) -> u32 {
+    red as u32 | ((green as u32) << 8) | ((blue as u32) << 16)
+}
+
+unsafe fn show_toggle_overlay(enabled: bool) {
+    let Some(shared) = OVERLAY_STATE.get() else {
+        return;
+    };
+    let mut state = shared.lock().unwrap_or_else(|p| p.into_inner());
+    state.enabled = enabled;
+    let mut hwnd = state.hwnd as HWND;
+    if hwnd.is_null() || wm::IsWindow(hwnd) == 0 {
+        let class = wide(OVERLAY_CLASS);
+        let title = wide("RTX HDR");
+        let instance = GetModuleHandleW(null());
+        hwnd = wm::CreateWindowExW(
+            wm::WS_EX_NOACTIVATE | wm::WS_EX_TOOLWINDOW | wm::WS_EX_TOPMOST,
+            class.as_ptr(),
+            title.as_ptr(),
+            wm::WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            null_mut(),
+            null_mut(),
+            instance,
+            null(),
+        );
+        if hwnd.is_null() {
+            return;
+        }
+        state.hwnd = hwnd as usize;
+    }
+    drop(state);
+
+    let foreground = wm::GetForegroundWindow();
+    let monitor = gdi::MonitorFromWindow(foreground, gdi::MONITOR_DEFAULTTONEAREST);
+    let mut monitor_info: gdi::MONITORINFO = zeroed();
+    monitor_info.cbSize = size_of::<gdi::MONITORINFO>() as u32;
+    if gdi::GetMonitorInfoW(monitor, &mut monitor_info) == 0 {
+        return;
+    }
+
+    let dpi = if foreground.is_null() {
+        GetDpiForWindow(hwnd)
+    } else {
+        GetDpiForWindow(foreground)
+    }
+    .max(96) as i32;
+    let width = scale_for_dpi(280, dpi);
+    let height = scale_for_dpi(64, dpi);
+    let margin = scale_for_dpi(48, dpi);
+    let work_width = monitor_info.rcWork.right - monitor_info.rcWork.left;
+    let x = monitor_info.rcWork.left + (work_width - width) / 2;
+    let y = monitor_info.rcWork.bottom - height - margin;
+
+    let radius = scale_for_dpi(18, dpi);
+    let region = gdi::CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius);
+    if !region.is_null() && gdi::SetWindowRgn(hwnd, region, 1) == 0 {
+        gdi::DeleteObject(region);
+    }
+
+    wm::SetWindowPos(
+        hwnd,
+        wm::HWND_TOPMOST,
+        x,
+        y,
+        width,
+        height,
+        wm::SWP_NOACTIVATE | wm::SWP_SHOWWINDOW,
+    );
+    wm::InvalidateRect(hwnd, null(), 1);
+    wm::UpdateWindow(hwnd);
+    wm::ShowWindow(hwnd, wm::SW_SHOWNOACTIVATE);
+    wm::KillTimer(hwnd, OVERLAY_TIMER_ID);
+    wm::SetTimer(hwnd, OVERLAY_TIMER_ID, OVERLAY_DURATION_MS, None);
+}
+
+unsafe fn paint_overlay(hwnd: HWND) {
+    let mut paint: gdi::PAINTSTRUCT = zeroed();
+    let hdc = gdi::BeginPaint(hwnd, &mut paint);
+    if hdc.is_null() {
+        return;
+    }
+
+    let mut client: RECT = zeroed();
+    wm::GetClientRect(hwnd, &mut client);
+    let background = gdi::CreateSolidBrush(overlay_rgb(20, 22, 27));
+    if !background.is_null() {
+        gdi::FillRect(hdc, &client, background);
+        gdi::DeleteObject(background);
+    }
+
+    let enabled = OVERLAY_STATE
+        .get()
+        .map(|state| state.lock().unwrap_or_else(|p| p.into_inner()).enabled)
+        .unwrap_or(false);
+    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let accent = if enabled {
+        overlay_rgb(125, 255, 104)
+    } else {
+        overlay_rgb(163, 173, 190)
+    };
+    let dot_brush = gdi::CreateSolidBrush(accent);
+    if !dot_brush.is_null() {
+        let old_brush = gdi::SelectObject(hdc, dot_brush);
+        let old_pen = gdi::SelectObject(hdc, gdi::GetStockObject(gdi::NULL_PEN));
+        let center_x = scale_for_dpi(26, dpi);
+        let center_y = client.bottom / 2;
+        let radius = scale_for_dpi(5, dpi);
+        gdi::Ellipse(
+            hdc,
+            center_x - radius,
+            center_y - radius,
+            center_x + radius,
+            center_y + radius,
+        );
+        gdi::SelectObject(hdc, old_pen);
+        gdi::SelectObject(hdc, old_brush);
+        gdi::DeleteObject(dot_brush);
+    }
+
+    let face = wide("Microsoft YaHei UI");
+    let font = gdi::CreateFontW(
+        -scale_for_dpi(19, dpi),
+        0,
+        0,
+        0,
+        gdi::FW_SEMIBOLD as i32,
+        0,
+        0,
+        0,
+        gdi::DEFAULT_CHARSET as u32,
+        0,
+        0,
+        gdi::CLEARTYPE_QUALITY as u32,
+        0,
+        face.as_ptr(),
+    );
+    let old_font = if font.is_null() {
+        null_mut()
+    } else {
+        gdi::SelectObject(hdc, font)
+    };
+    gdi::SetBkMode(hdc, gdi::TRANSPARENT as i32);
+    gdi::SetTextColor(hdc, overlay_rgb(245, 247, 250));
+    let text = wide(if enabled {
+        "RTX HDR 已开启"
+    } else {
+        "RTX HDR 已关闭"
+    });
+    let mut text_rect = client;
+    text_rect.left = scale_for_dpi(46, dpi);
+    text_rect.right -= scale_for_dpi(14, dpi);
+    gdi::DrawTextW(
+        hdc,
+        text.as_ptr(),
+        -1,
+        &mut text_rect,
+        gdi::DT_CENTER | gdi::DT_VCENTER | gdi::DT_SINGLELINE | gdi::DT_NOPREFIX,
+    );
+    if !old_font.is_null() {
+        gdi::SelectObject(hdc, old_font);
+    }
+    if !font.is_null() {
+        gdi::DeleteObject(font);
+    }
+    gdi::EndPaint(hwnd, &paint);
+}
+
+unsafe extern "system" fn overlay_wndproc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match message {
+        wm::WM_PAINT => {
+            paint_overlay(hwnd);
+            0
+        }
+        wm::WM_ERASEBKGND => 1,
+        wm::WM_TIMER if wparam == OVERLAY_TIMER_ID => {
+            wm::KillTimer(hwnd, OVERLAY_TIMER_ID);
+            wm::ShowWindow(hwnd, wm::SW_HIDE);
+            0
+        }
+        wm::WM_NCHITTEST => wm::HTTRANSPARENT as isize,
+        wm::WM_MOUSEACTIVATE => wm::MA_NOACTIVATE as isize,
+        WM_NCDESTROY => {
+            if let Some(state) = OVERLAY_STATE.get() {
+                state.lock().unwrap_or_else(|p| p.into_inner()).hwnd = 0;
+            }
+            wm::DefWindowProcW(hwnd, message, wparam, lparam)
+        }
+        _ => wm::DefWindowProcW(hwnd, message, wparam, lparam),
+    }
 }
 
 unsafe fn register_window_class(
@@ -663,6 +894,16 @@ unsafe fn cleanup(hwnd: HWND) {
         let settings_hwnd = settings_window as HWND;
         if wm::IsWindow(settings_hwnd) != 0 {
             wm::DestroyWindow(settings_hwnd);
+        }
+    }
+    let overlay_window = OVERLAY_STATE
+        .get()
+        .map(|state| state.lock().unwrap_or_else(|p| p.into_inner()).hwnd)
+        .unwrap_or(0);
+    if overlay_window != 0 {
+        let overlay_hwnd = overlay_window as HWND;
+        if wm::IsWindow(overlay_hwnd) != 0 {
+            wm::DestroyWindow(overlay_hwnd);
         }
     }
     if tray_added {
@@ -836,34 +1077,45 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                 }
             }
             WorkerEvent::Toggle(result) => {
-                let (notification, critical) = if let Some(state) = APP_STATE.get() {
+                let (notification, critical, overlay) = if let Some(state) = APP_STATE.get() {
                     let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                     state.busy = false;
                     match result {
                         Ok(outcome) => {
-                            let enabled = outcome.after.enabled;
+                            let hdr_enabled = outcome.after.enabled;
                             state.hdr = HdrUi::Ready(outcome.after);
                             state.last_error = None;
-                            let text = if enabled {
+                            let text = if hdr_enabled {
                                 "RTX 视频 HDR 已开启".to_string()
                             } else {
                                 "RTX 视频 HDR 已关闭".to_string()
                             };
-                            let enabled = state.settings.notifications;
-                            (if enabled { Some((text, false)) } else { None }, false)
+                            let notifications = state.settings.notifications;
+                            (
+                                if notifications {
+                                    Some((text, false))
+                                } else {
+                                    None
+                                },
+                                false,
+                                Some(hdr_enabled),
+                            )
                         }
                         Err(error) => {
                             let text = error.user_message();
                             let critical = matches!(error, AppError::RollbackFailed);
                             state.hdr = HdrUi::Error(text.clone());
                             state.last_error = Some(text.clone());
-                            (Some((text, true)), critical)
+                            (Some((text, true)), critical, None)
                         }
                     }
                 } else {
-                    (None, false)
+                    (None, false, None)
                 };
                 add_or_update_tray(hwnd, false);
+                if let Some(enabled) = overlay {
+                    show_toggle_overlay(enabled);
+                }
                 if let Some((text, is_error)) = notification {
                     show_balloon(hwnd, "RTX 视频 HDR", &text, is_error);
                 }
