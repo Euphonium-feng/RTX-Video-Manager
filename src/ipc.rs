@@ -117,8 +117,10 @@ pub fn write_packet(writer: &mut impl Write, value: &impl Serialize) -> Result<(
             payload.len()
         )));
     }
-    writer.write_all(&(payload.len() as u32).to_le_bytes())?;
-    writer.write_all(&payload)?;
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&payload);
+    writer.write_all(&frame)?;
     writer.flush()?;
     Ok(())
 }
