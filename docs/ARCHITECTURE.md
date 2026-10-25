@@ -19,9 +19,9 @@ view over a local IPC contract.
 - `src/ipc.rs`: versioned IPC DTOs and length-prefixed JSON framing.
 - `crates/ui/`: `RtxHdrSettings.exe`, the GPUI console; it never links NvCpl. Its
   IPC worker also owns both directions of its pipe handle on one thread.
-- `assets/`: tray state icons, the console product icon, and the shared application
-  manifest. `crates/ui/build.rs` embeds the console icon and manifest into
-  `RtxHdrSettings.exe`; the console does not depend on external asset files at runtime.
+- `assets/`: tray state icons, the console product icon, and the host application
+  manifest. `crates/ui/build.rs` embeds the console icon into `RtxHdrSettings.exe`;
+  the console does not depend on external asset files at runtime.
 - `.github/workflows/build.yml`: formatting, lint, tests, Release build, packaging,
   and artifact upload.
 
@@ -50,8 +50,11 @@ view over a local IPC contract.
 
 `assets/rtx-hdr-console.svg` is the editable master. The checked-in PNG exports are
 documentation previews, while `assets/rtx-hdr-console.ico` carries sizes from 16 to
-256 pixels for Windows. The GPUI package compiles the ICO and shared manifest through
-`crates/ui/resources.rc`, so packaging only needs to ship the two executables.
+256 pixels for Windows. The GPUI package compiles the ICO through
+`crates/ui/resources.rc`, so packaging only needs to ship the two executables. The
+console intentionally does not embed the host manifest because the GPUI dependency
+chain already links its per-monitor DPI manifest; embedding both caused a duplicate
+manifest resource at link time.
 
 ## Glossary
 
