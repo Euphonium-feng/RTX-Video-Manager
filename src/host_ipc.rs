@@ -270,16 +270,20 @@ fn same_user_and_session(pipe: HANDLE) -> bool {
             return false;
         }
 
-        let client_sid = token_user_sid(client_token);
-        let current_sid = token_user_sid(current_token);
+        let client_identity = token_user_identity(client_token);
+        let current_identity = token_user_identity(current_token);
         CloseHandle(client_token);
         CloseHandle(current_token);
 
-        matches!((client_sid, current_sid), (Some(client), Some(current)) if EqualSid(client, current) != 0)
+        matches!(
+            (client_identity, current_identity),
+            (Some((_client_buffer, client_sid)), Some((_current_buffer, current_sid)))
+                if EqualSid(client_sid as PSID, current_sid as PSID) != 0
+        )
     }
 }
 
-unsafe fn token_user_sid(token: HANDLE) -> Option<PSID> {
+unsafe fn token_user_identity(token: HANDLE) -> Option<(Vec<usize>, usize)> {
     let mut required = 0u32;
     GetTokenInformation(token, TokenUser, null_mut(), 0, &mut required);
     if required == 0 {
@@ -298,7 +302,7 @@ unsafe fn token_user_sid(token: HANDLE) -> Option<PSID> {
         return None;
     }
     let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
-    Some(token_user.User.Sid)
+    Some((buffer, token_user.User.Sid as usize))
 }
 
 fn post_event(event: IpcEvent) {
