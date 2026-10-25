@@ -1,10 +1,9 @@
 #![windows_subsystem = "windows"]
 
 use rtx_hdr_switch::{
-    format_hotkey, is_verified_nvcpl, parse_hdr_info, toggle_with_transport, AppError,
-    HdrSnapshot, Hotkey, NvTransport, Settings, ToggleOutcome, HDR_INFO_SIZE,
-    HDR_SETTING_ID, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH,
-    NVCPL_SHA256_HEX,
+    format_hotkey, is_verified_nvcpl, parse_hdr_info, toggle_with_transport, AppError, HdrSnapshot,
+    Hotkey, NvTransport, Settings, ToggleOutcome, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT,
+    MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH, NVCPL_SHA256_HEX,
 };
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -19,8 +18,7 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use windows_sys::core::{GUID, PCWSTR};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, FreeLibrary, GetLastError, SetLastError, HINSTANCE, HWND, LPARAM, LRESULT,
-    WPARAM,
+    CloseHandle, FreeLibrary, GetLastError, SetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi as gdi;
 use windows_sys::Win32::Security::WinTrust::{
@@ -31,9 +29,8 @@ use windows_sys::Win32::Security::WinTrust::{
 };
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryExW};
 use windows_sys::Win32::System::Registry::{
-    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
-    RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD,
-    REG_OPTION_NON_VOLATILE, REG_SZ,
+    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::Controls::BST_CHECKED;
@@ -42,8 +39,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetAsyncKeyState, RegisterHotKey, SetFocus, UnregisterHotKey,
 };
 use windows_sys::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_ERROR, NIIF_INFO,
-    NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+    Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_ERROR, NIIF_INFO, NIM_ADD,
+    NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging as wm;
 use windows_sys::Win32::UI::WindowsAndMessaging::{HICON, HMENU};
@@ -158,16 +155,16 @@ enum WorkerEvent {
 
 type InitFn = unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32;
 type CloseFn = unsafe extern "system" fn() -> i32;
-type GetSettingFn =
-    unsafe extern "system" fn(u32, *const u64, u32, *mut c_void, usize) -> i32;
-type SetSettingFn =
-    unsafe extern "system" fn(u32, *const u64, u32, *const c_void, usize) -> i32;
+type GetSettingFn = unsafe extern "system" fn(u32, *const u64, u32, *mut c_void, usize) -> i32;
+type SetSettingFn = unsafe extern "system" fn(u32, *const u64, u32, *const c_void, usize) -> i32;
+type ExecuteFn = unsafe extern "system" fn(u32, u32, i32) -> i32;
 
 struct NvBackend {
     module: *mut c_void,
     close: CloseFn,
     get_setting: GetSettingFn,
     set_setting: SetSettingFn,
+    execute: ExecuteFn,
 }
 
 impl NvBackend {
@@ -181,8 +178,11 @@ impl NvBackend {
         verify_nvidia_signature(&path)?;
 
         let path_wide = wide(&path.to_string_lossy());
-        let module =
-            LoadLibraryExW(path_wide.as_ptr(), null_mut(), LOAD_WITH_ALTERED_SEARCH_PATH);
+        let module = LoadLibraryExW(
+            path_wide.as_ptr(),
+            null_mut(),
+            LOAD_WITH_ALTERED_SEARCH_PATH,
+        );
         if module.is_null() {
             return Err(AppError::NvCplLoadFailed(GetLastError()));
         }
@@ -191,6 +191,7 @@ impl NvBackend {
         let p_close = GetProcAddress(module, c"NvCplApiClose".as_ptr().cast());
         let p_get = GetProcAddress(module, c"NvCplApiGetSetting".as_ptr().cast());
         let p_set = GetProcAddress(module, c"NvCplApiSetSetting".as_ptr().cast());
+        let p_execute = GetProcAddress(module, c"NvCplApiExecute".as_ptr().cast());
         if p_init.is_none() {
             FreeLibrary(module);
             return Err(AppError::MissingExport("NvCplApiInit"));
@@ -207,11 +208,16 @@ impl NvBackend {
             FreeLibrary(module);
             return Err(AppError::MissingExport("NvCplApiSetSetting"));
         }
+        if p_execute.is_none() {
+            FreeLibrary(module);
+            return Err(AppError::MissingExport("NvCplApiExecute"));
+        }
 
         let init: InitFn = std::mem::transmute(p_init.unwrap());
         let close: CloseFn = std::mem::transmute(p_close.unwrap());
         let get_setting: GetSettingFn = std::mem::transmute(p_get.unwrap());
         let set_setting: SetSettingFn = std::mem::transmute(p_set.unwrap());
+        let execute: ExecuteFn = std::mem::transmute(p_execute.unwrap());
         let init_code = init(null_mut(), null_mut());
         if init_code != 0 {
             FreeLibrary(module);
@@ -223,6 +229,7 @@ impl NvBackend {
             close,
             get_setting,
             set_setting,
+            execute,
         };
         let raw = backend.read_hdr_bytes()?;
         parse_hdr_info(&raw)?;
@@ -245,10 +252,7 @@ impl NvBackend {
         Ok(raw)
     }
 
-    unsafe fn write_hdr_bytes(
-        &self,
-        raw: &[u8; HDR_INFO_SIZE],
-    ) -> Result<(), AppError> {
+    unsafe fn write_hdr_bytes(&self, raw: &[u8; HDR_INFO_SIZE]) -> Result<(), AppError> {
         let context = 0u64;
         let code = (self.set_setting)(
             1,
@@ -259,6 +263,11 @@ impl NvBackend {
         );
         if code != 0 {
             return Err(AppError::ApiFailed("NvCplApiSetSetting", code));
+        }
+        // NVIDIA App stages the write and then commits the state transaction.
+        let commit_code = (self.execute)(0x10000, 0, -1);
+        if commit_code != 0 {
+            return Err(AppError::ApiFailed("NvCplApiExecute", commit_code));
         }
         Ok(())
     }
@@ -310,8 +319,7 @@ unsafe fn run() -> i32 {
     let instance = GetModuleHandleW(null());
     let taskbar_created_message =
         wm::RegisterWindowMessageW(wide(TASKBAR_CREATED_MESSAGE).as_ptr());
-    let open_settings_message =
-        wm::RegisterWindowMessageW(wide(OPEN_SETTINGS_MESSAGE).as_ptr());
+    let open_settings_message = wm::RegisterWindowMessageW(wide(OPEN_SETTINGS_MESSAGE).as_ptr());
 
     let mutex_name = wide(MUTEX_NAME);
     SetLastError(0);
@@ -346,7 +354,10 @@ unsafe fn run() -> i32 {
         0,
         instance,
     ) {
-        log_line(&format!("RegisterClassExW(main) failed: {}", GetLastError()));
+        log_line(&format!(
+            "RegisterClassExW(main) failed: {}",
+            GetLastError()
+        ));
         CloseHandle(mutex);
         return 1;
     }
@@ -448,11 +459,7 @@ unsafe fn run() -> i32 {
     }
     if let Some(warning) = startup_warning {
         log_line(&warning);
-        show_message(
-            hwnd,
-            &warning,
-            wm::MB_OK | wm::MB_ICONWARNING,
-        );
+        show_message(hwnd, &warning, wm::MB_OK | wm::MB_ICONWARNING);
     }
 
     let mut message: wm::MSG = zeroed();
@@ -789,14 +796,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                                 "RTX 视频 HDR 已关闭".to_string()
                             };
                             let enabled = state.settings.notifications;
-                            (
-                                if enabled {
-                                    Some((text, false))
-                                } else {
-                                    None
-                                },
-                                false,
-                            )
+                            (if enabled { Some((text, false)) } else { None }, false)
                         }
                         Err(error) => {
                             let text = error.user_message();
@@ -907,25 +907,24 @@ fn tray_tooltip(state: &AppState) -> String {
 }
 
 unsafe fn show_tray_menu(hwnd: HWND) {
-    let (status, toggle_enabled, startup, notifications) =
-        if let Some(state) = APP_STATE.get() {
-            let state = state.lock().unwrap_or_else(|p| p.into_inner());
-            let status = match &state.hdr {
-                HdrUi::Loading => "状态：正在读取".to_string(),
-                HdrUi::Ready(snapshot) if snapshot.enabled => "状态：开".to_string(),
-                HdrUi::Ready(snapshot) if snapshot.supported => "状态：关".to_string(),
-                HdrUi::Ready(_) => "状态：不支持".to_string(),
-                HdrUi::Error(_) => "状态：不可用".to_string(),
-            };
-            (
-                status,
-                !state.busy,
-                state.settings.start_at_login,
-                state.settings.notifications,
-            )
-        } else {
-            return;
+    let (status, toggle_enabled, startup, notifications) = if let Some(state) = APP_STATE.get() {
+        let state = state.lock().unwrap_or_else(|p| p.into_inner());
+        let status = match &state.hdr {
+            HdrUi::Loading => "状态：正在读取".to_string(),
+            HdrUi::Ready(snapshot) if snapshot.enabled => "状态：开".to_string(),
+            HdrUi::Ready(snapshot) if snapshot.supported => "状态：关".to_string(),
+            HdrUi::Ready(_) => "状态：不支持".to_string(),
+            HdrUi::Error(_) => "状态：不可用".to_string(),
         };
+        (
+            status,
+            !state.busy,
+            state.settings.start_at_login,
+            state.settings.notifications,
+        )
+    } else {
+        return;
+    };
 
     let menu = wm::CreatePopupMenu();
     if menu.is_null() {
@@ -942,12 +941,22 @@ unsafe fn show_tray_menu(hwnd: HWND) {
         toggle.as_ptr(),
     );
     let settings = wide("设置...");
-    wm::AppendMenuW(menu, wm::MF_STRING, CMD_SETTINGS as usize, settings.as_ptr());
+    wm::AppendMenuW(
+        menu,
+        wm::MF_STRING,
+        CMD_SETTINGS as usize,
+        settings.as_ptr(),
+    );
     wm::AppendMenuW(menu, wm::MF_SEPARATOR, 0, null());
     let startup_text = wide("开机启动");
     wm::AppendMenuW(
         menu,
-        wm::MF_STRING | if startup { wm::MF_CHECKED } else { wm::MF_UNCHECKED },
+        wm::MF_STRING
+            | if startup {
+                wm::MF_CHECKED
+            } else {
+                wm::MF_UNCHECKED
+            },
         CMD_STARTUP as usize,
         startup_text.as_ptr(),
     );
@@ -1074,12 +1083,7 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
 
 unsafe fn register_configured_hotkey(hwnd: HWND, hotkey: Hotkey) -> Result<(), AppError> {
     hotkey.validate()?;
-    let result = RegisterHotKey(
-        hwnd,
-        HOTKEY_ID,
-        hotkey.modifiers | MOD_NOREPEAT,
-        hotkey.vk,
-    );
+    let result = RegisterHotKey(hwnd, HOTKEY_ID, hotkey.modifiers | MOD_NOREPEAT, hotkey.vk);
     if result == 0 {
         let code = GetLastError();
         return Err(AppError::Settings(format!(
@@ -1453,13 +1457,8 @@ unsafe fn save_settings_from_window(hwnd: HWND, state: &mut SettingsWindowState)
     let mut candidate = state.settings.clone();
     candidate.start_at_login =
         wm::SendMessageW(state.startup_check, wm::BM_GETCHECK, 0, 0) as u32 == BST_CHECKED;
-    candidate.notifications = wm::SendMessageW(
-        state.notification_check,
-        wm::BM_GETCHECK,
-        0,
-        0,
-    ) as u32
-        == BST_CHECKED;
+    candidate.notifications =
+        wm::SendMessageW(state.notification_check, wm::BM_GETCHECK, 0, 0) as u32 == BST_CHECKED;
     match apply_settings(state.owner, candidate) {
         Ok(()) => {
             wm::DestroyWindow(hwnd);
@@ -1481,8 +1480,8 @@ fn capture_keys() -> Vec<u32> {
     keys.extend(0x41..=0x5a);
     keys.extend(0x70..=0x87);
     keys.extend([
-        0x08, 0x09, 0x0d, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2d,
-        0x2e, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xdb, 0xdc, 0xdd, 0xde,
+        0x08, 0x09, 0x0d, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2d, 0x2e, 0xba,
+        0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xdb, 0xdc, 0xdd, 0xde,
     ]);
     keys
 }
@@ -1549,11 +1548,7 @@ unsafe fn show_diagnostics(hwnd: HWND) {
     } else {
         "应用状态尚未初始化。".into()
     };
-    show_message(
-        hwnd,
-        &text,
-        wm::MB_OK | wm::MB_ICONINFORMATION,
-    );
+    show_message(hwnd, &text, wm::MB_OK | wm::MB_ICONINFORMATION);
 }
 
 fn yes_no(value: bool) -> &'static str {
@@ -1565,8 +1560,8 @@ fn yes_no(value: bool) -> &'static str {
 }
 
 fn nvcpl_path() -> Option<PathBuf> {
-    let program_files = std::env::var_os("ProgramW6432")
-        .or_else(|| std::env::var_os("ProgramFiles"))?;
+    let program_files =
+        std::env::var_os("ProgramW6432").or_else(|| std::env::var_os("ProgramFiles"))?;
     let path = PathBuf::from(program_files).join(NVCPL_RELATIVE_PATH);
     path.is_file().then_some(path)
 }
@@ -1584,8 +1579,7 @@ unsafe fn verify_nvidia_signature(path: &Path) -> Result<(), AppError> {
     data.dwUnionChoice = WTD_CHOICE_FILE;
     data.Anonymous.pFile = &mut file;
     data.dwStateAction = WTD_STATEACTION_VERIFY;
-    data.dwProvFlags =
-        WTD_REVOCATION_CHECK_NONE | WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL;
+    data.dwProvFlags = WTD_REVOCATION_CHECK_NONE | WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL;
     data.dwUIContext = WTD_UICONTEXT_EXECUTE;
 
     let mut action: GUID = WINTRUST_ACTION_GENERIC_VERIFY_V2;

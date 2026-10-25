@@ -175,10 +175,7 @@ pub fn parse_hdr_info(raw: &[u8; HDR_INFO_SIZE]) -> Result<HdrSnapshot, AppError
     })
 }
 
-pub fn encode_hdr_write(
-    original: &[u8; HDR_INFO_SIZE],
-    enabled: bool,
-) -> [u8; HDR_INFO_SIZE] {
+pub fn encode_hdr_write(original: &[u8; HDR_INFO_SIZE], enabled: bool) -> [u8; HDR_INFO_SIZE] {
     let mut output = *original;
     write_i32(&mut output, 0x04, if enabled { 1 } else { 0 });
     write_i32(&mut output, 0x08, 0);
@@ -236,12 +233,7 @@ pub fn toggle_with_transport<T: NvTransport>(transport: &mut T) -> Result<Toggle
         return Ok(ToggleOutcome { before, after });
     }
 
-    recover_after_error(
-        transport,
-        &original,
-        &before,
-        AppError::VerificationFailed,
-    )
+    recover_after_error(transport, &original, &before, AppError::VerificationFailed)
 }
 
 fn recover_after_error<T: NvTransport>(
@@ -347,10 +339,7 @@ fn error_code_is_known(value: i32) -> bool {
 }
 
 fn is_modifier_vk(vk: u32) -> bool {
-    matches!(
-        vk,
-        0x10 | 0x11 | 0x12 | 0x5b | 0x5c | 0xa0..=0xa5
-    )
+    matches!(vk, 0x10 | 0x11 | 0x12 | 0x5b | 0x5c | 0xa0..=0xa5)
 }
 
 fn read_i32(raw: &[u8; HDR_INFO_SIZE], offset: usize) -> i32 {
@@ -409,9 +398,7 @@ mod tests {
 
         fn write_info(&mut self, info: &[u8; HDR_INFO_SIZE]) -> Result<(), AppError> {
             self.writes.push(*info);
-            self.write_results
-                .pop_front()
-                .unwrap_or(Ok(()))
+            self.write_results.pop_front().unwrap_or(Ok(()))
         }
     }
 
@@ -452,19 +439,13 @@ mod tests {
         assert_eq!(read_i32(&encoded, 0x08), 0);
         assert_eq!(read_i32(&encoded, 0x0c), 0);
         for offset in [0x00, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24] {
-            assert_eq!(
-                &encoded[offset..offset + 4],
-                &original[offset..offset + 4]
-            );
+            assert_eq!(&encoded[offset..offset + 4], &original[offset..offset + 4]);
         }
     }
 
     #[test]
     fn toggles_off_to_on() {
-        let mut transport = FakeTransport::new(vec![
-            Ok(sample_raw(false)),
-            Ok(sample_raw(true)),
-        ]);
+        let mut transport = FakeTransport::new(vec![Ok(sample_raw(false)), Ok(sample_raw(true))]);
         let result = toggle_with_transport(&mut transport).unwrap();
         assert!(!result.before.enabled);
         assert!(result.after.enabled);
@@ -501,8 +482,7 @@ mod tests {
         let original = sample_raw(false);
         let mut wrong = sample_raw(false);
         write_i32(&mut wrong, 0x10, 1400);
-        let mut transport =
-            FakeTransport::new(vec![Ok(original), Ok(wrong), Ok(original)]);
+        let mut transport = FakeTransport::new(vec![Ok(original), Ok(wrong), Ok(original)]);
         assert_eq!(
             toggle_with_transport(&mut transport),
             Err(AppError::VerificationFailed)
