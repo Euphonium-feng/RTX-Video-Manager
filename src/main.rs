@@ -70,6 +70,9 @@ const RECORD_TIMER_ID: usize = 2;
 const OVERLAY_TIMER_ID: usize = 1;
 const TRAY_ICON_ID: u32 = 1;
 const OVERLAY_DURATION_MS: u32 = 300;
+const OVERLAY_WIDTH: i32 = 360;
+const OVERLAY_HEIGHT: i32 = 64;
+const OVERLAY_BOTTOM_MARGIN: i32 = 48;
 
 const CMD_TOGGLE: u32 = 1001;
 const CMD_SETTINGS: u32 = 1002;
@@ -611,9 +614,9 @@ unsafe fn show_toggle_overlay(enabled: bool) {
         GetDpiForWindow(foreground)
     }
     .max(96) as i32;
-    let width = scale_for_dpi(280, dpi);
-    let height = scale_for_dpi(64, dpi);
-    let margin = scale_for_dpi(48, dpi);
+    let width = scale_for_dpi(OVERLAY_WIDTH, dpi);
+    let height = scale_for_dpi(OVERLAY_HEIGHT, dpi);
+    let margin = scale_for_dpi(OVERLAY_BOTTOM_MARGIN, dpi);
     let work_width = monitor_info.rcWork.right - monitor_info.rcWork.left;
     let x = monitor_info.rcWork.left + (work_width - width) / 2;
     let y = monitor_info.rcWork.bottom - height - margin;
