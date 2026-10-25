@@ -394,8 +394,10 @@ fn main() {
 unsafe fn run() -> i32 {
     let background =
         std::env::args_os().any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--background"));
-    let legacy_settings = std::env::args_os()
-        .any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--legacy-settings"));
+    let legacy_settings = std::env::args_os().any(|arg| {
+        arg.to_string_lossy()
+            .eq_ignore_ascii_case("--legacy-settings")
+    });
     let instance = GetModuleHandleW(null());
     let taskbar_created_message =
         wm::RegisterWindowMessageW(wide(TASKBAR_CREATED_MESSAGE).as_ptr());
@@ -1005,16 +1007,14 @@ unsafe fn handle_ipc_events(hwnd: HWND) {
             }
             IpcEvent::Command(command) => match command {
                 UiCommand::ToggleHdr => request_toggle(hwnd, false),
-                UiCommand::ApplySettings { settings } => {
-                    match apply_settings(hwnd, settings) {
-                        Ok(()) => {}
-                        Err(error) => {
-                            refresh_settings_toggle_button();
-                            send_ui_error(error);
-                            send_ui_snapshot();
-                        }
+                UiCommand::ApplySettings { settings } => match apply_settings(hwnd, settings) {
+                    Ok(()) => {}
+                    Err(error) => {
+                        refresh_settings_toggle_button();
+                        send_ui_error(error);
+                        send_ui_snapshot();
                     }
-                }
+                },
                 UiCommand::BeginHotkeyCapture => begin_hotkey_capture(hwnd),
                 UiCommand::EndHotkeyCapture => end_hotkey_capture(hwnd, false),
                 UiCommand::Refresh => {
@@ -1632,9 +1632,7 @@ unsafe fn open_console_page(owner: HWND, page: UiPage) {
     if !helper.is_file() {
         show_message(
             owner,
-            &format!(
-                "未找到 {SETTINGS_EXECUTABLE}。\n\n请将发布包中的两个 EXE 解压到同一目录。"
-            ),
+            &format!("未找到 {SETTINGS_EXECUTABLE}。\n\n请将发布包中的两个 EXE 解压到同一目录。"),
             wm::MB_OK | wm::MB_ICONERROR,
         );
         return;

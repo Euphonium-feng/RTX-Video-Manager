@@ -2,25 +2,21 @@
 
 mod ipc_client;
 
-use gpui_kit::component::button::{
-    Button, ButtonCustomVariant, ButtonVariants,
-};
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
-use rtx_hdr_switch::ipc::{
-    HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot,
-};
+use rtx_hdr_switch::ipc::{HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot};
 use rtx_hdr_switch::{
-    format_hotkey, AppError, Hotkey, Settings, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
-    NVCPL_SHA256_HEX,
+    AppError, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_SHA256_HEX, Settings,
+    format_hotkey,
 };
 use std::ptr::null;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError};
 use windows_sys::Win32::System::Threading::CreateMutexW;
 
 const INK: u32 = 0x0B1215;
@@ -92,16 +88,12 @@ impl ConsoleApp {
         }
     }
 
-    fn start_event_pump(
-        &self,
-        events: Receiver<ClientEvent>,
-        cx: &mut Context<Self>,
-    ) {
+    fn start_event_pump(&self, events: Receiver<ClientEvent>, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {
                 let mut disconnected = None;
                 while let Ok(event) = events.try_recv() {
-                    if matches!(event, ClientEvent::Disconnected(_)) {
+                    if matches!(&event, ClientEvent::Disconnected(_)) {
                         disconnected = Some(event);
                         break;
                     }
@@ -314,11 +306,7 @@ impl ConsoleApp {
 
     fn status_text(&self) -> (String, String, String) {
         if let Some(error) = &self.connection_error {
-            return (
-                "后台连接已断开".into(),
-                error.clone(),
-                "○ 已断线".into(),
-            );
+            return ("后台连接已断开".into(), error.clone(), "○ 已断线".into());
         }
         match self.snapshot.as_ref().map(|snapshot| &snapshot.hdr) {
             None | Some(UiHdrState::Loading) => (
@@ -365,29 +353,26 @@ impl ConsoleApp {
 
     fn render_title_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let _ = cx;
-        TitleBar::new()
-            .bg(rgb(INK))
-            .border_color(rgb(RULE))
-            .child(
-                h_flex()
-                    .w_full()
-                    .items_center()
-                    .gap_2()
-                    .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(SIGNAL)))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(0xC6D4D5))
-                            .child("RTX HDR 控制台"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
-                            .child("· 后台运行中"),
-                    ),
-            )
+        TitleBar::new().bg(rgb(INK)).border_color(rgb(RULE)).child(
+            h_flex()
+                .w_full()
+                .items_center()
+                .gap_2()
+                .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(rgb(SIGNAL)))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(0xC6D4D5))
+                        .child("RTX HDR 控制台"),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(MUTED))
+                        .child("· 后台运行中"),
+                ),
+        )
     }
 
     fn render_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -406,8 +391,16 @@ impl ConsoleApp {
         };
 
         let toggle_style = ButtonCustomVariant::new(cx)
-            .color(if enabled { rgb(RAISED).into() } else { rgb(SIGNAL).into() })
-            .foreground(if enabled { rgb(TEXT).into() } else { rgb(INK).into() })
+            .color(if enabled {
+                rgb(RAISED).into()
+            } else {
+                rgb(SIGNAL).into()
+            })
+            .foreground(if enabled {
+                rgb(TEXT).into()
+            } else {
+                rgb(INK).into()
+            })
             .hover(if enabled {
                 rgb(0x203138).into()
             } else {
@@ -438,13 +431,11 @@ impl ConsoleApp {
                         h_flex()
                             .items_center()
                             .gap_2()
-                            .child(
-                                div()
-                                    .w(px(7.))
-                                    .h(px(7.))
-                                    .rounded_full()
-                                    .bg(if enabled { rgb(SIGNAL) } else { rgb(MUTED) }),
-                            )
+                            .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(if enabled {
+                                rgb(SIGNAL)
+                            } else {
+                                rgb(MUTED)
+                            }))
                             .child(
                                 div()
                                     .text_size(px(11.))
@@ -630,17 +621,19 @@ impl ConsoleApp {
                             .custom(
                                 ButtonCustomVariant::new(cx)
                                     .color(rgb(RAISED).into())
-                                    .foreground(
-                                        if self.recording {
-                                            rgb(WARM).into()
-                                        } else {
-                                            rgb(0xDBE7E8).into()
-                                        },
-                                    )
+                                    .foreground(if self.recording {
+                                        rgb(WARM).into()
+                                    } else {
+                                        rgb(0xDBE7E8).into()
+                                    })
                                     .hover(rgb(0x203138).into())
                                     .active(rgb(0x17262B).into()),
                             )
-                            .label(if self.recording { "请按键…" } else { "录制" })
+                            .label(if self.recording {
+                                "请按键…"
+                            } else {
+                                "录制"
+                            })
                             .compact()
                             .ml_auto()
                             .on_click(cx.listener(|app, _, window, cx| {
@@ -685,10 +678,7 @@ impl ConsoleApp {
 
     fn render_diagnostics(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let hdr = self.hdr_ready();
-        let diagnostics = self
-            .snapshot
-            .as_ref()
-            .map(|snapshot| &snapshot.diagnostics);
+        let diagnostics = self.snapshot.as_ref().map(|snapshot| &snapshot.diagnostics);
         v_flex()
             .w_full()
             .h(px(179.))
@@ -770,23 +760,18 @@ impl ConsoleApp {
                     )),
             )
             .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(SUBTLE))
-                    .child(
-                        diagnostics
-                            .and_then(|value| value.last_error.as_deref())
-                            .map(|error| format!("最近错误：{error}"))
-                            .unwrap_or_else(|| "最近错误：无".into()),
-                    ),
+                div().text_size(px(10.)).text_color(rgb(SUBTLE)).child(
+                    diagnostics
+                        .and_then(|value| value.last_error.as_deref())
+                        .map(|error| format!("最近错误：{error}"))
+                        .unwrap_or_else(|| "最近错误：无".into()),
+                ),
             )
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let save_disabled = !self.dirty
-            || self.saving
-            || self.recording
-            || self.connection_error.is_some();
+        let save_disabled =
+            !self.dirty || self.saving || self.recording || self.connection_error.is_some();
         let connection = if self.connection_error.is_some() {
             "IPC 未连接 · 后台未运行"
         } else {
@@ -845,7 +830,11 @@ impl ConsoleApp {
                                     .hover(rgb(SIGNAL_HOVER).into())
                                     .active(rgb(0x51CBD4).into()),
                             )
-                            .label(if self.saving { "保存中…" } else { "保存更改" })
+                            .label(if self.saving {
+                                "保存中…"
+                            } else {
+                                "保存更改"
+                            })
                             .loading(self.saving)
                             .disabled(save_disabled)
                             .on_click(cx.listener(|app, _, _, cx| app.save(cx))),
@@ -1088,10 +1077,7 @@ fn main() {
             gpui_kit::init(cx);
             apply_visual_theme(cx);
             let window_options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(
-                    size(px(760.), px(540.)),
-                    cx,
-                )),
+                window_bounds: Some(WindowBounds::centered(size(px(760.), px(540.)), cx)),
                 is_resizable: false,
                 is_minimizable: true,
                 ..TitleBar::window_options()

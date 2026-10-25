@@ -1,4 +1,4 @@
-use crate::ipc::{
+use rtx_hdr_switch::ipc::{
     decode, read_packet, write_packet, HostEvent, IpcError, UiCommand, UiError, PIPE_NAME,
     PROTOCOL_VERSION,
 };
@@ -9,7 +9,6 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
     ERROR_PIPE_NOT_CONNECTED, HANDLE,
@@ -80,7 +79,9 @@ pub fn send(event: &HostEvent) -> bool {
     if handle == 0 {
         return false;
     }
-    let _guard = WRITE_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let _guard = WRITE_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     let result = write_packet(&mut PipeWriter(handle as HANDLE), event);
     drop(_guard);
     if result.is_err() {

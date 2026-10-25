@@ -31,10 +31,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: rtx-hdr-switch
-
-      - name: Update dependency lock for new UI crates
-        shell: pwsh
-        run: cargo generate-lockfile
+          cache-on-failure: true
 
       - name: Format
         shell: pwsh

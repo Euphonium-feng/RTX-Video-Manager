@@ -1,5 +1,5 @@
 use rtx_hdr_switch::ipc::{
-    read_packet, write_packet, HostEvent, IpcError, UiCommand, PIPE_NAME, PROTOCOL_VERSION,
+    HostEvent, IpcError, PIPE_NAME, PROTOCOL_VERSION, UiCommand, read_packet, write_packet,
 };
 use std::io::{self, Read, Write};
 use std::ptr::{null, null_mut};
