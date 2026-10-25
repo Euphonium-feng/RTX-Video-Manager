@@ -1098,7 +1098,9 @@ fn wide(text: &str) -> Vec<u16> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{error_for_code, hotkey_from_keystroke};
+    use gpui_kit::{Keystroke, Modifiers};
+    use rtx_hdr_switch::Hotkey;
 
     fn stroke(modifiers: Modifiers, key: &str) -> Keystroke {
         Keystroke {

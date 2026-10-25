@@ -4,7 +4,7 @@ use rtx_hdr_switch::ipc::{
 use std::io::{self, Read, Write};
 use std::ptr::{null, null_mut};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
