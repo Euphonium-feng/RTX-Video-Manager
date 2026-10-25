@@ -342,6 +342,7 @@ cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx
 - [x] 托盘图标、菜单与 Explorer 重建
 - [x] 单实例打开控制台
 - [x] GPUI 控制台握手、快照和快捷键录制路径
+- [x] 控制台产品图标嵌入与 EXE 关联图标复核
 - [x] 关闭控制台后释放辅助进程
 - [ ] 500 ms 浮层在最终图标构建上的人工视觉复核
 - [ ] 无 HDR 显示器 / Windows HDR 关闭 / Surround 冲突的人工复测

@@ -2,8 +2,8 @@
 
 ## In Progress
 
-- Validate the icon-embedded GPUI console against a green GitHub Actions artifact,
-  then inspect the taskbar/window icon and recheck the 500 ms overlay.
+- Finish the remaining manual state matrix and visually time the 500 ms overlay on
+  the verified icon build.
 
 ## Verified
 
@@ -30,18 +30,19 @@
 - The host and console named-pipe deadlocks were fixed by assigning each connection's
   complete read/write path to one thread. User testing confirmed that the tray,
   shortcut, and GPUI console handshake now work.
-- The console icon master, PNG previews, multi-resolution ICO, resource script, and
-  cloud build wiring are present locally; final cloud and shell-surface validation
-  remain pending.
+- GitHub Actions run `40210660195` is green for commit `ebdf9cd`. The artifact's host
+  SHA-256 is `2A822BE7BF695A96A231E31B8A1DAF16D459ACAB52C755714AA0D2F18927C411`;
+  the console SHA-256 is
+  `58ADFE84F3AF612D89CD4330A2A7FCD5019E0AEF882881BCBC75E101B2819F37`.
+- The green artifact's associated executable icon was extracted and visually checked
+  as the custom calibration-ring icon. Launching the artifact produced a responsive
+  GPUI console connected to the host, with the current HDR-off state, 400–1440 nits
+  range, shortcut, and 500 ms overlay setting rendered correctly.
 - The runnable calibration-dashboard prototype is in `prototype/gpui-console.html`
   and has been rendered at 900 x 700 for visual review.
 
 ## Pending
 
-- Push the icon and README changes and wait for a green cloud run that validates the
-  `embed-resource` dependency and `resources.rc` path resolution.
-- Download the green artifact and verify the custom icon in the taskbar, title bar,
-  executable properties, and notification-size shell surfaces.
 - Download the artifact and verify the GPUI console opens, toggles HDR, saves
   settings, records a shortcut, reconnects, and exits completely on close.
 - Visually verify the 500 ms overlay duration and 50% opacity in the final artifact.
@@ -58,5 +59,5 @@
 ## Next Action
 
 Commit the icon, README, lockfile, and documentation updates; push to `main`; then run
-`gh run watch <id> --exit-status`. If green, download the artifact and inspect the
-console icon plus the 500 ms overlay on the reference machine.
+Run the remaining manual state matrix in `docs/PROJECT.md` against the green
+`40210660195` artifact and time the 500 ms overlay visually.
