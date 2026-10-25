@@ -633,8 +633,8 @@ unsafe fn show_toggle_overlay(enabled: bool) {
         height,
         wm::SWP_NOACTIVATE | wm::SWP_SHOWWINDOW,
     );
-    wm::InvalidateRect(hwnd, null(), 1);
-    wm::UpdateWindow(hwnd);
+    gdi::InvalidateRect(hwnd, null(), 1);
+    gdi::UpdateWindow(hwnd);
     wm::ShowWindow(hwnd, wm::SW_SHOWNOACTIVATE);
     wm::KillTimer(hwnd, OVERLAY_TIMER_ID);
     wm::SetTimer(hwnd, OVERLAY_TIMER_ID, OVERLAY_DURATION_MS, None);
