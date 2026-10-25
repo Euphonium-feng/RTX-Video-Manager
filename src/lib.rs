@@ -72,9 +72,7 @@ impl AppError {
             Self::ApiFailed(operation, code) => {
                 format!("NVIDIA 接口 {operation} 调用失败（{code}）。")
             }
-            Self::UxdServiceUnavailable => {
-                "NVIDIA 显示设置服务未运行，已禁止修改 HDR。".into()
-            }
+            Self::UxdServiceUnavailable => "NVIDIA 显示设置服务未运行，已禁止修改 HDR。".into(),
             Self::InvalidData(detail) => format!("NVIDIA 返回的数据无效：{detail}。"),
             Self::HdrUnsupported => "当前 GPU 或显示器不支持 RTX 视频 HDR。".into(),
             Self::NoHdrDisplay => "未检测到活动的 HDR10 显示器。".into(),
