@@ -22,6 +22,12 @@
   `NvCplApiIsUxdServiceRunning` before `NvCplApiInit`; writes are refused if either
   prerequisite fails.
 - Settings and startup entries may only be written under `HKCU`.
+- HDR tuning writes must stay inside the current driver limits: peak brightness is
+  clamped to `peak_min..=peak_max`; middle gray is limited to `0..=100`; contrast and
+  saturation are limited to `-100..=100`. A failed or mismatched write restores the
+  complete original 48-byte block.
+- The console reset action always targets peak upper bound, middle gray 50, contrast
+  0, and saturation 0. It does not restore an arbitrary earlier user-edited snapshot.
 - RTX Video HDR, Windows HDR, and VSR are distinct settings and must not be
   treated interchangeably.
 - GPUI must be pinned to `gpui-kit = "=0.8.0"` and its pinned GPUI snapshot; do not

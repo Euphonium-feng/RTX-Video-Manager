@@ -13,7 +13,7 @@
   <img alt="No WebView" src="https://img.shields.io/badge/WebView-none-65DDE6?style=for-the-badge">
 </p>
 
-`Ctrl+Alt+H` · 托盘常驻 · 500 ms 半透明浮层 · 严格回滚事务 · 按需 GPUI 控制台
+`Ctrl+Alt+H` 切换 · `Ctrl+Alt+G` 唤起/收起控制台 · 500 ms 半透明浮层 · 严格回滚事务
 
 ![RTX HDR 控制台](prototype/gpui-console.png)
 
@@ -46,6 +46,8 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 | 你可能正在经历 | 使用之后 |
 | --- | --- |
 | 为了关 HDR，打开 NVIDIA App 翻三层菜单 | `Ctrl+Alt+H`，一次按键 |
+| 想改 HDR 峰值或调色，又要重新翻驱动面板 | `Ctrl+Alt+G` 打开控制台，滑块与数值直接调 |
+| 控制台挡在视频前，还要去点关闭 | 控制台在前台时再按 `Ctrl+Alt+G`，立即收起 |
 | 不确定当前设置到底是开还是关 | 托盘图标和控制台实时显示状态 |
 | 切完不知道有没有生效 | 500 ms 屏幕下方浮层即时反馈 |
 | 担心修改 HDR 弄坏其他调校参数 | 严格读—改—写—回读—回滚事务 |
@@ -60,7 +62,8 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 ┌──────────────────────────────────────────────────────────────┐
 │                        Windows 桌面                          │
 │                                                              │
-│   Ctrl+Alt+H ─────┐                                          │
+│   Ctrl+Alt+H ─────┤                                          │
+│   Ctrl+Alt+G ─────┤                                          │
 │                    ▼                                          │
 │   ┌─────────────────────────┐       ┌────────────────────┐   │
 │   │ RtxHdrSwitch.exe        │◀─────▶│ RtxHdrSettings.exe │   │
@@ -78,7 +81,7 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 
 ### 宿主能力
 
-- 默认快捷键 `Ctrl+Alt+H`，可录制新组合。
+- 默认快捷键 `Ctrl+Alt+H` 切换 HDR，`Ctrl+Alt+G` 唤起或收起控制台，均可重新录制。
 - 通知区域常驻，左键打开控制台，右键打开原生菜单。
 - 开机启动默认开启，可随时关闭。
 - 切换成功后在当前显示器底部居中显示 **500 ms**、50% 透明度的开启/关闭提示。
@@ -87,9 +90,11 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 
 ### 控制台能力
 
-- 大号 HDR 状态、实时峰值亮度和有效区间。
+- 大号 HDR 状态，以及来自驱动 `0x318` 的峰值、峰值上下限、中间灰、对比度和饱和度。
 - 直接开启/关闭 RTX Video HDR。
-- 快捷键可视化录制。
+- 峰值亮度、中间灰、对比度、饱和度均支持滑块和直接数值输入。
+- `还原`无论何时点击都恢复驱动默认组合：峰值上限、中间灰 50、对比度 0、饱和度 0。
+- 两个全局快捷键均可可视化录制，且禁止设置成同一组合。
 - 开机启动与切换浮层开关。
 - NVIDIA DLL 路径、允许哈希、错误码、调校字段与最近错误。
 - 关闭窗口即退出 GPUI，释放渲染资源；托盘宿主继续工作。
@@ -290,7 +295,7 @@ flowchart TB
 | 指标 | 目标 / 观察值 |
 | --- | --- |
 | 宿主 EXE | 约 0.5 MB |
-| GPUI 控制台 EXE | 约 14 MB |
+| GPUI 控制台 EXE | 约 17.7 MB |
 | 宿主空闲私有内存 | 约 6–13 MB |
 | 控制台私有内存 | 实测约 90–100 MB，仅在打开时存在 |
 | 空闲 CPU | 接近 0 |
@@ -342,6 +347,8 @@ cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx
 - [x] 托盘图标、菜单与 Explorer 重建
 - [x] 单实例打开控制台
 - [x] GPUI 控制台握手、快照和快捷键录制路径
+- [x] 四项 HDR 调校写入、逐项回读与恢复原始值
+- [x] `Ctrl+Alt+G` 唤起控制台的热键注册与真实按键验证
 - [x] 控制台产品图标嵌入与 EXE 关联图标复核
 - [x] 关闭控制台后释放辅助进程
 - [ ] 500 ms 浮层在最终图标构建上的人工视觉复核
@@ -374,6 +381,14 @@ NVIDIA App 点击  ❌
 ---
 
 ## 常见问题
+
+<details>
+<summary><strong>`1440 nits` 是写死的吗？</strong></summary>
+
+不是。它是宿主通过 NVIDIA `0x318` 读取到的当前峰值亮度，旁边的最小/最大值也来自驱动。
+不同显示器或 HDR 配置会得到不同的数值和可选区间。
+
+</details>
 
 <details>
 <summary><strong>为什么快捷键有反馈，但控制台显示不可用？</strong></summary>
@@ -412,7 +427,7 @@ Set + Execute + 回读路径，并有原始字节回滚。
 
 **Less panel archaeology. More watching.**
 
-`Ctrl+Alt+H`
+`Ctrl+Alt+H` 切换 · `Ctrl+Alt+G` 控制台
 
 项目细节见 [`docs/`](docs/) · 视觉原型见 [`prototype/gpui-console.html`](prototype/gpui-console.html)
 

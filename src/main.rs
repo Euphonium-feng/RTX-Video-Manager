@@ -872,7 +872,7 @@ unsafe extern "system" fn wndproc(
             0
         }
         wm::WM_HOTKEY if wparam as i32 == SHOW_HOTKEY_ID => {
-            open_settings(hwnd);
+            toggle_console_visibility(hwnd);
             0
         }
         WM_APP_TRAY => {
@@ -1017,9 +1017,7 @@ unsafe fn handle_ipc_events(hwnd: HWND) {
             }
             IpcEvent::Command(command) => match command {
                 UiCommand::ToggleHdr => request_toggle(hwnd, false),
-                UiCommand::ApplyHdrTuning { adjustments } => {
-                    request_hdr_tuning(hwnd, adjustments)
-                }
+                UiCommand::ApplyHdrTuning { adjustments } => request_hdr_tuning(hwnd, adjustments),
                 UiCommand::ApplySettings { settings } => match apply_settings(hwnd, settings) {
                     Ok(()) => {}
                     Err(error) => {
@@ -1165,7 +1163,10 @@ unsafe fn request_hdr_tuning(hwnd: HWND, adjustments: HdrAdjustments) {
         None
     };
     if let Some(sender) = sender {
-        if sender.send(WorkerCommand::ApplyHdrTuning(adjustments)).is_err() {
+        if sender
+            .send(WorkerCommand::ApplyHdrTuning(adjustments))
+            .is_err()
+        {
             if let Some(state) = APP_STATE.get() {
                 let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                 state.busy = false;
@@ -1692,12 +1693,7 @@ unsafe fn register_configured_hotkeys(hwnd: HWND, settings: &Settings) -> Result
     let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
     let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
 
-    if let Err(error) = register_hotkey(
-        hwnd,
-        HOTKEY_ID,
-        settings.hotkey,
-        "切换 RTX HDR",
-    ) {
+    if let Err(error) = register_hotkey(hwnd, HOTKEY_ID, settings.hotkey, "切换 RTX HDR") {
         let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
         let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
         return Err(error);
@@ -1715,12 +1711,7 @@ unsafe fn register_configured_hotkeys(hwnd: HWND, settings: &Settings) -> Result
     Ok(())
 }
 
-unsafe fn register_hotkey(
-    hwnd: HWND,
-    id: i32,
-    hotkey: Hotkey,
-    role: &str,
-) -> Result<(), AppError> {
+unsafe fn register_hotkey(hwnd: HWND, id: i32, hotkey: Hotkey, role: &str) -> Result<(), AppError> {
     let result = RegisterHotKey(hwnd, id, hotkey.modifiers | MOD_NOREPEAT, hotkey.vk);
     if result == 0 {
         let code = GetLastError();
@@ -1744,6 +1735,14 @@ unsafe fn open_settings(owner: HWND) {
         .unwrap_or(false);
     if legacy {
         open_native_settings(owner);
+    } else {
+        open_console_page(owner, UiPage::Console);
+    }
+}
+
+unsafe fn toggle_console_visibility(owner: HWND) {
+    if host_ipc::has_client() {
+        let _ = send_ui_event(HostEvent::ToggleConsoleVisibility);
     } else {
         open_console_page(owner, UiPage::Console);
     }
@@ -2378,11 +2377,7 @@ fn save_settings(settings: &Settings) -> Result<(), AppError> {
                 "ShowHotkeyModifiers",
                 settings.show_console_hotkey.modifiers,
             )?;
-            set_registry_dword(
-                key,
-                "ShowHotkeyVirtualKey",
-                settings.show_console_hotkey.vk,
-            )?;
+            set_registry_dword(key, "ShowHotkeyVirtualKey", settings.show_console_hotkey.vk)?;
             set_registry_dword(
                 key,
                 "StartAtLogin",

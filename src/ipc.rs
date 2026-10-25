@@ -73,6 +73,7 @@ pub enum HostEvent {
     ActivatePage {
         page: UiPage,
     },
+    ToggleConsoleVisibility,
     Activate,
 }
 

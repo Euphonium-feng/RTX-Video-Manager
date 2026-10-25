@@ -56,6 +56,15 @@ impl HdrAdjustments {
             saturation: snapshot.saturation,
         }
     }
+
+    pub fn defaults_for(snapshot: &HdrSnapshot) -> Self {
+        Self {
+            peak_brightness: snapshot.peak_max,
+            middle_gray: 50,
+            contrast: 0,
+            saturation: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -384,12 +393,7 @@ pub fn tune_with_transport<T: NvTransport>(
         return Ok(TuningOutcome { before, after });
     }
 
-    recover_tuning_after_error(
-        transport,
-        &original,
-        &before,
-        AppError::VerificationFailed,
-    )
+    recover_tuning_after_error(transport, &original, &before, AppError::VerificationFailed)
 }
 
 fn recover_after_error<T: NvTransport>(
@@ -429,7 +433,9 @@ fn recover_tuning_after_error<T: NvTransport>(
         .ok()
         .and_then(|raw| parse_hdr_info(&raw).ok());
     match restored {
-        Some(value) if persistent_fields_equal(before, &value) && value.enabled == before.enabled => {
+        Some(value)
+            if persistent_fields_equal(before, &value) && value.enabled == before.enabled =>
+        {
             Err(original_error)
         }
         _ => Err(AppError::RollbackFailed),
@@ -618,6 +624,20 @@ mod tests {
         assert_eq!(snapshot.peak_max, 1440);
         assert_eq!(snapshot.contrast, 0);
         assert_eq!(snapshot.saturation, 0);
+    }
+
+    #[test]
+    fn derives_dynamic_hdr_defaults_from_snapshot() {
+        let snapshot = parse_hdr_info(&sample_raw(false)).unwrap();
+        assert_eq!(
+            HdrAdjustments::defaults_for(&snapshot),
+            HdrAdjustments {
+                peak_brightness: 1440,
+                middle_gray: 50,
+                contrast: 0,
+                saturation: 0,
+            }
+        );
     }
 
     #[test]
@@ -822,10 +842,7 @@ mod tests {
         }
         .validate()
         .is_err());
-        assert_eq!(
-            format_hotkey(Hotkey::console_default()),
-            "Ctrl+Alt+G"
-        );
+        assert_eq!(format_hotkey(Hotkey::console_default()), "Ctrl+Alt+G");
         let duplicate = Settings {
             show_console_hotkey: Hotkey::default(),
             ..Settings::default()

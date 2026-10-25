@@ -91,3 +91,34 @@ multi-resolution ICO into `RtxHdrSettings.exe` through its own resource script.
 Rejected: shipping an external icon file, relying on a generic executable icon, or
 using the small tray-state glyphs as the full-size application identity. The dedicated
 icon stays legible from 16 to 256 pixels and does not add a runtime asset dependency.
+
+## ADR-011: Treat HDR tuning as a full rollback transaction
+
+Expose peak brightness, middle gray, contrast, and saturation through the console.
+Peak is bounded by the live `peak_min`/`peak_max` values; tone controls use the
+validated integer ranges `0..=100` and `-100..=100`. The write preserves enable state,
+display limits, and untouched bytes, commits through the existing NVIDIA execute call,
+and verifies every desired tuning field before accepting success.
+
+Rejected: writing only the slider field, trusting `SetSetting` success, or exposing
+unbounded raw integers directly from the UI.
+
+## ADR-012: Driver-derived defaults for the reset action
+
+The reset action always produces the default tuning draft: peak equals the current
+display's `peak_max`, middle gray is 50, contrast is 0, and saturation is 0. It remains
+available after a successful apply and only changes the draft until the user presses
+`应用调校`.
+
+Rejected: restoring the last read snapshot under the label "reset", or disabling reset
+after apply.
+
+## ADR-013: Separate console shortcut and custom title-bar controls
+
+Register `Ctrl+Alt+G` as a second configurable global shortcut that opens or
+foregrounds the console. When the console is already active, the same shortcut closes
+it to the tray. The GPUI window decides using `Window::is_window_active`, so the host
+does not need to guess which process owns the foreground. Register both shortcuts
+together and roll both back if either fails. Render a custom title bar with minimize
+and close only because the GPUI window-controls helper always advertises maximize on
+Windows even for non-resizable windows.

@@ -9,8 +9,14 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 
 - Stay resident in the notification area and use minimal idle CPU and memory.
 - Default shortcut: `Ctrl+Alt+H`; allow the user to record a different shortcut.
+- Default `Ctrl+Alt+G` opens or foregrounds the console when it is not active and
+  closes the console when it is already foreground. Allow it to be recorded
+  independently and reject duplicate shortcut assignments.
 - Toggle only RTX Video HDR. Do not toggle Windows HDR or RTX Video Super Resolution.
 - Preserve the existing NVIDIA HDR tuning fields when toggling.
+- Let the user adjust peak brightness, middle gray, contrast, and saturation through
+  both sliders and direct numeric entry. Peak bounds come from the active driver
+  snapshot. The reset action always restores the driver default combination.
 - Show a brief bottom-center overlay on successful toggles that reports whether
   RTX Video HDR is on or off.
 - Provide an on-demand GPUI control console with a direct HDR action, live state,
@@ -33,6 +39,7 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 - The generated release artifact comes from a successful GitHub Actions run.
 - Idle private working set is below 15 MiB and idle CPU is effectively zero.
 - Closing the console terminates the GPUI process; tray and shortcut behavior remain.
+- The console title bar exposes minimize and close only; maximize is not offered.
 - The release archive contains `RtxHdrSwitch.exe` and `RtxHdrSettings.exe` together.
 - `RtxHdrSettings.exe` displays its embedded product icon in Windows shell surfaces
   rather than the generic executable icon.

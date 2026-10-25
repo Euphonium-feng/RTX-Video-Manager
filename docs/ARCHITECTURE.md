@@ -36,14 +36,20 @@ view over a local IPC contract.
 5. The worker validates the exact DLL, signature, exports, and a 48-byte read probe.
 6. Toggle requests read `0x318`, change only the enabled field, write, commit with
    `NvCplApiExecute(0x10000, 0, -1)`, read back, and restore the original bytes on
-   failure.
+   failure. Tuning requests use the same transaction for peak, middle gray, contrast,
+   and saturation, then verify all four readback fields plus unchanged enable state
+   and display limits.
 7. Worker results return to the tray through posted window messages and are also
    published as snapshots to a connected console.
 8. Interactive launches spawn the console; `--background` launches only the
    tray so the current-user startup entry stays silent.
 9. Successful toggles show a non-activating, topmost overlay at the bottom center
    of the active monitor for 500 ms at 50% opacity.
-10. Closing the console exits `RtxHdrSettings.exe`; the host, tray, hotkey, and last
+10. `Ctrl+Alt+H` toggles HDR. `Ctrl+Alt+G` sends a visibility toggle to the console
+    when connected; an active console closes itself, while a background or absent
+    console is opened and foregrounded. Both shortcuts are registered as one
+    rollback-safe group.
+11. Closing the console exits `RtxHdrSettings.exe`; the host, tray, hotkeys, and last
     HDR state remain active.
 
 ## Product Icon

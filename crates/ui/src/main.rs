@@ -12,8 +12,8 @@ use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
 use rtx_hdr_switch::ipc::{HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot};
 use rtx_hdr_switch::{
-    AppError, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
-    NVCPL_SHA256_HEX, Settings, format_hotkey,
+    AppError, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_SHA256_HEX,
+    Settings, format_hotkey,
 };
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -94,10 +94,8 @@ impl ConsoleApp {
         let contrast_slider = cx.new(|_| SliderState::new().min(-100.).max(100.).step(1.));
         let saturation_slider = cx.new(|_| SliderState::new().min(-100.).max(100.).step(1.));
         let peak_input = cx.new(|cx| InputState::new(window, cx).step(1.).min(0.).max(5000.));
-        let middle_gray_input =
-            cx.new(|cx| InputState::new(window, cx).step(1.).min(0.).max(100.));
-        let contrast_input =
-            cx.new(|cx| InputState::new(window, cx).step(1.).min(-100.).max(100.));
+        let middle_gray_input = cx.new(|cx| InputState::new(window, cx).step(1.).min(0.).max(100.));
+        let contrast_input = cx.new(|cx| InputState::new(window, cx).step(1.).min(-100.).max(100.));
         let saturation_input =
             cx.new(|cx| InputState::new(window, cx).step(1.).min(-100.).max(100.));
         let mut app = Self {
@@ -285,6 +283,14 @@ impl ConsoleApp {
                 self.page = page;
                 cx.activate(true);
             }
+            ClientEvent::Event(HostEvent::ToggleConsoleVisibility) => {
+                if window.is_window_active() {
+                    window.remove_window();
+                } else {
+                    window.activate_window();
+                    cx.activate(true);
+                }
+            }
             ClientEvent::Event(HostEvent::Activate) => {
                 cx.activate(true);
             }
@@ -306,9 +312,7 @@ impl ConsoleApp {
         };
         self.snapshot = Some(snapshot);
         if !self.hdr_dirty && !self.tuning_saving {
-            self.hdr_draft = hdr
-                .as_ref()
-                .map(HdrAdjustments::from_snapshot);
+            self.hdr_draft = hdr.as_ref().map(HdrAdjustments::from_snapshot);
             self.sync_tuning_controls(window, cx);
         }
     }
@@ -337,12 +341,7 @@ impl ConsoleApp {
         self.send(UiCommand::ToggleHdr, cx);
     }
 
-    fn begin_recording(
-        &mut self,
-        field: HotkeyField,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn begin_recording(&mut self, field: HotkeyField, window: &mut Window, cx: &mut Context<Self>) {
         if self.recording == Some(field) {
             self.recording = None;
             self.send(UiCommand::EndHotkeyCapture, cx);
@@ -413,9 +412,8 @@ impl ConsoleApp {
                 return;
             };
             let position = slider_value.clamp(0., 1000.);
-            (hdr.peak_min as f32
-                + (hdr.peak_max - hdr.peak_min) as f32 * position / 1000.)
-                .round() as i32
+            (hdr.peak_min as f32 + (hdr.peak_max - hdr.peak_min) as f32 * position / 1000.).round()
+                as i32
         } else {
             slider_value.round() as i32
         };
@@ -518,14 +516,7 @@ impl ConsoleApp {
             (TuningField::Contrast, draft.contrast),
             (TuningField::Saturation, draft.saturation),
         ] {
-            self.write_tuning_control(
-                field,
-                value,
-                &hdr,
-                TuningSource::Snapshot,
-                window,
-                cx,
-            );
+            self.write_tuning_control(field, value, &hdr, TuningSource::Snapshot, window, cx);
         }
     }
 
@@ -588,8 +579,9 @@ impl ConsoleApp {
 
     fn reset_tuning(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(hdr) = self.hdr_ready().cloned() {
-            self.hdr_draft = Some(HdrAdjustments::from_snapshot(&hdr));
-            self.hdr_dirty = false;
+            let defaults = HdrAdjustments::defaults_for(&hdr);
+            self.hdr_dirty = defaults != HdrAdjustments::from_snapshot(&hdr);
+            self.hdr_draft = Some(defaults);
             self.transient_error = None;
             self.sync_tuning_controls(window, cx);
             cx.notify();
@@ -762,15 +754,6 @@ impl ConsoleApp {
         let enabled = self.enabled();
         let can_toggle = self.can_toggle();
         let busy = self.busy();
-        let hdr = self.hdr_ready();
-        let peak = hdr.map_or(0, |value| value.peak_brightness);
-        let min = hdr.map_or(0, |value| value.peak_min);
-        let max = hdr.map_or(0, |value| value.peak_max);
-        let percent = if max > min {
-            ((peak - min) as f32 / (max - min) as f32).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
 
         let toggle_style = ButtonCustomVariant::new(cx)
             .color(if enabled {
@@ -796,7 +779,7 @@ impl ConsoleApp {
 
         h_flex()
             .w_full()
-            .h(px(178.))
+            .h(px(142.))
             .flex_shrink_0()
             .gap_5()
             .p_5()
@@ -845,70 +828,6 @@ impl ConsoleApp {
                                 rgb(MUTED)
                             })
                             .child(detail),
-                    )
-                    .child(
-                        v_flex()
-                            .mt(px(12.))
-                            .max_w(px(390.))
-                            .gap_1()
-                            .opacity(if hdr.is_some() { 1.0 } else { 0.35 })
-                            .child(
-                                h_flex()
-                                    .justify_between()
-                                    .child(
-                                        div()
-                                            .text_size(px(10.))
-                                            .text_color(rgb(MUTED))
-                                            .child("HDR 峰值亮度"),
-                                    )
-                                    .child(
-                                        div()
-                                            .font_family("Bahnschrift")
-                                            .text_size(px(13.))
-                                            .text_color(rgb(TEXT))
-                                            .child(if hdr.is_some() {
-                                                format!("{peak} nits")
-                                            } else {
-                                                "—".into()
-                                            }),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .relative()
-                                    .w_full()
-                                    .h(px(5.))
-                                    .rounded_full()
-                                    .bg(rgb(0x26363C))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .left_0()
-                                            .top_0()
-                                            .bottom_0()
-                                            .w(relative(percent))
-                                            .rounded_full()
-                                            .bg(rgb(SIGNAL)),
-                                    ),
-                            )
-                            .child(
-                                h_flex()
-                                    .justify_between()
-                                    .font_family("Cascadia Mono")
-                                    .text_size(px(9.))
-                                    .text_color(rgb(SUBTLE))
-                                    .child(if hdr.is_some() {
-                                        min.to_string()
-                                    } else {
-                                        "—".into()
-                                    })
-                                    .child("亮度范围")
-                                    .child(if hdr.is_some() {
-                                        max.to_string()
-                                    } else {
-                                        "—".into()
-                                    }),
-                            ),
                     ),
             )
             .child(
@@ -1037,7 +956,7 @@ impl ConsoleApp {
         v_flex()
             .flex_1()
             .min_w(px(0.))
-            .gap_2()
+            .gap_1()
             .opacity(unavailable_opacity)
             .child(
                 h_flex()
@@ -1056,7 +975,7 @@ impl ConsoleApp {
                             .disabled(!enabled)
                             .accessibility_label(label)
                             .w(px(112.))
-                            .h(px(32.)),
+                            .h(px(28.)),
                     ),
             )
             .child(
@@ -1065,7 +984,7 @@ impl ConsoleApp {
                     .accessibility_label(label)
                     .bg(rgb(SIGNAL))
                     .text_color(rgb(TEXT))
-                    .h(px(26.))
+                    .h(px(20.))
                     .w_full(),
             )
             .child(
@@ -1083,15 +1002,14 @@ impl ConsoleApp {
         let peak_range = hdr.map_or("—".into(), |hdr| {
             format!("{} – {} nits", hdr.peak_min, hdr.peak_max)
         });
-        let peak_value = self
-            .hdr_draft
-            .as_ref()
-            .map_or("—".into(), |draft| format!("{} nits", draft.peak_brightness));
+        let peak_value = self.hdr_draft.as_ref().map_or("—".into(), |draft| {
+            format!("{} nits", draft.peak_brightness)
+        });
         let disabled = !self.hdr_dirty || !self.can_tune() || self.tuning_saving;
 
         v_flex()
             .w_full()
-            .h(px(194.))
+            .h(px(234.))
             .flex_shrink_0()
             .gap_3()
             .p_4()
@@ -1139,7 +1057,7 @@ impl ConsoleApp {
                                     .ghost()
                                     .compact()
                                     .label("还原")
-                                    .disabled(self.tuning_saving)
+                                    .disabled(self.tuning_saving || self.hdr_ready().is_none())
                                     .on_click(cx.listener(|app, _, window, cx| {
                                         app.reset_tuning(window, cx);
                                     })),
@@ -1174,7 +1092,7 @@ impl ConsoleApp {
                     .child(
                         v_flex()
                             .flex_1()
-                            .gap_3()
+                            .gap_2()
                             .child(self.render_tuning_control(
                                 TuningField::Peak,
                                 "峰值亮度",
@@ -1189,7 +1107,7 @@ impl ConsoleApp {
                     .child(
                         v_flex()
                             .flex_1()
-                            .gap_3()
+                            .gap_2()
                             .child(self.render_tuning_control(
                                 TuningField::Contrast,
                                 "对比度",
@@ -1223,12 +1141,7 @@ impl ConsoleApp {
             .border_1()
             .border_color(rgb(RULE))
             .bg(rgb(PANEL))
-            .child(self.render_hotkey_row(
-                HotkeyField::Toggle,
-                "切换 HDR",
-                self.draft.hotkey,
-                cx,
-            ))
+            .child(self.render_hotkey_row(HotkeyField::Toggle, "切换 HDR", self.draft.hotkey, cx))
             .child(self.render_hotkey_row(
                 HotkeyField::Console,
                 "唤起控制台",
@@ -1404,14 +1317,11 @@ impl ConsoleApp {
                     .ml_auto()
                     .gap_2()
                     .when(self.connection_error.is_some(), |this| {
-                        this.child(
-                            Button::new("reconnect")
-                                .ghost()
-                                .label("重连后台")
-                                .on_click(cx.listener(|app, _, window, cx| {
-                                    app.reconnect(window, cx);
-                                })),
-                        )
+                        this.child(Button::new("reconnect").ghost().label("重连后台").on_click(
+                            cx.listener(|app, _, window, cx| {
+                                app.reconnect(window, cx);
+                            }),
+                        ))
                     })
                     .child(
                         Button::new("reset")
@@ -1680,8 +1590,18 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             apply_visual_theme(cx);
+            let scale_factor = cx
+                .primary_display()
+                .map(|display| display.scale_factor())
+                .unwrap_or(1.);
             let window_options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(size(px(760.), px(748.)), cx)),
+                window_bounds: Some(WindowBounds::centered(
+                    size(
+                        px(760. * scale_factor),
+                        px(756. * scale_factor),
+                    ),
+                    cx,
+                )),
                 is_resizable: false,
                 is_minimizable: true,
                 ..TitleBar::window_options()

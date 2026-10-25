@@ -2,8 +2,8 @@
 
 ## In Progress
 
-- Finish the remaining manual state matrix and visually time the 500 ms overlay on
-  the verified icon build.
+- Validate the DPI-corrected console build and finish the remaining manual state
+  matrix.
 
 ## Verified
 
@@ -38,13 +38,27 @@
   as the custom calibration-ring icon. Launching the artifact produced a responsive
   GPUI console connected to the host, with the current HDR-off state, 400–1440 nits
   range, shortcut, and 500 ms overlay setting rendered correctly.
+- GitHub Actions run `40224894598` is green for the HDR tuning implementation.
+  Clippy, unit tests, host release, and GPUI release build all passed.
+- A reversible IPC probe changed all four tuning fields
+  (`1440 / 50 / 0 / 0` to `1400 / 45 / 5 / -5`), verified the readback, and restored
+  the original values. Both `Ctrl+Alt+H` and `Ctrl+Alt+G` were registered; a competing
+  registration returned error 1409 for each.
+- Pressing a synthetic `Ctrl+Alt+G` reopened the console after its window process was
+  closed.
+- `Ctrl+Alt+G` now queues a visibility toggle to the connected console: active
+  windows close, background windows activate. Final artifact verification remains.
 - The runnable calibration-dashboard prototype is in `prototype/gpui-console.html`
-  and has been rendered at 900 x 700 for visual review.
+  and has been rendered at 800 x 760 for visual review.
 
 ## Pending
 
-- Download the artifact and verify the GPUI console opens, toggles HDR, saves
-  settings, records a shortcut, reconnects, and exits completely on close.
+- Rebuild and visually verify the DPI-corrected console at the reference 125% scale;
+  confirm the removed hero meter, visible ranges for all four controls, always-default
+  `还原`, and absent maximize control.
+- Verify toggles, tuning apply/reset, both hotkey recordings, foreground/background
+  `Ctrl+Alt+G` behavior, settings save, reconnect, and complete console exit on the
+  final artifact.
 - Visually verify the 500 ms overlay duration and 50% opacity in the final artifact.
 - Verify that tray, shortcut, native overlay, startup entry, single instance,
   Explorer restart, rollback injection, no-HDR-display, Windows-HDR-off, and
@@ -58,6 +72,5 @@
 
 ## Next Action
 
-Commit the icon, README, lockfile, and documentation updates; push to `main`; then run
-Run the remaining manual state matrix in `docs/PROJECT.md` against the green
-`40210660195` artifact and time the 500 ms overlay visually.
+Push the DPI and UX corrections, wait for green CI, then download the artifact and run
+the remaining manual state matrix plus the 500 ms overlay visual check.
