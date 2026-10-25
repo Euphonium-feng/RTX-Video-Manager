@@ -39,7 +39,7 @@ view over a local IPC contract.
 8. Interactive launches spawn the console; `--background` launches only the
    tray so the current-user startup entry stays silent.
 9. Successful toggles show a non-activating, topmost overlay at the bottom center
-   of the active monitor for 300 ms at 50% opacity.
+   of the active monitor for 500 ms at 50% opacity.
 10. Closing the console exits `RtxHdrSettings.exe`; the host, tray, hotkey, and last
     HDR state remain active.
 

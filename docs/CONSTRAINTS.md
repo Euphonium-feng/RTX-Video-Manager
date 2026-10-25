@@ -4,7 +4,7 @@
   uses GPUI Kit. Do not add Tauri, WebView, `tray-icon`, or `global-hotkey`.
 - The host must not link GPUI, own a renderer, or keep the console process alive
   after its only window closes.
-- Tray icon, native menu, global shortcut registration, and the 300 ms overlay stay
+- Tray icon, native menu, global shortcut registration, and the 500 ms overlay stay
   in the Win32 host. GPUI has no supported tray API.
 - The GPUI console must not load NvCpl, write NVIDIA settings, or persist settings
   directly. All actions go through the versioned local IPC channel to the host.

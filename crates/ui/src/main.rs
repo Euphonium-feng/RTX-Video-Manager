@@ -662,7 +662,7 @@ impl ConsoleApp {
             .child(behavior_row(
                 "反馈",
                 "切换时显示系统浮层",
-                "屏幕下方 300 ms 半透明提示",
+                "屏幕下方 500 ms 半透明提示",
                 Switch::new("notifications")
                     .checked(self.draft.notifications)
                     .on_change(cx.listener(|app, value, _, cx| {

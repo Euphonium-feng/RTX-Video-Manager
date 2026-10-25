@@ -41,13 +41,13 @@ Chrome playback and returned to `active=0` after restoring the original state.
 Rejected: treating `SetSetting`/`Execute` success alone as proof that the feature is
 active, or falling back to Windows HDR.
 
-## ADR-006: Native 300 ms toggle overlay
+## ADR-006: Native 500 ms toggle overlay
 
 Show a small native Win32 popup at the bottom center of the active monitor after a
 successful toggle. The window is topmost, uses a rounded custom-drawn capsule, and
 uses `WS_EX_NOACTIVATE` plus `SW_SHOWNOACTIVATE` so the shortcut does not disturb
 the foreground video. Keep it compact and use 50% layered-window opacity so it does
-not cover the video. Hide it with a 300 ms timer.
+not cover the video. Hide it with a 500 ms timer.
 
 Rejected: Windows toast notifications as the only feedback because notification
 settings and Focus Assist can suppress them, and an HTML/WebView overlay because it
@@ -58,7 +58,7 @@ would add substantial runtime weight.
 Keep `RtxHdrSwitch.exe` as a GPUI-free Win32 process and run `RtxHdrSettings.exe`
 only while the control console is open. The console communicates with the host over
 a one-client, same-user named pipe; it never loads NvCpl or writes registry values.
-Tray, hotkey registration, and the 300 ms overlay stay native because GPUI has no
+Tray, hotkey registration, and the 500 ms overlay stay native because GPUI has no
 tray API and spawning a renderer for every shortcut would add latency and memory.
 
 Rejected: putting GPUI in the resident host, implementing a WebView/Tauri console,

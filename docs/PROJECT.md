@@ -45,4 +45,4 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 
 - Chrome extensions, CSS video filtering, or content classification.
 - Windows HDR switching, VSR control, auto-update, installers, or public support.
-- Replacing the native notification-area icon or 300 ms toggle overlay with GPUI.
+- Replacing the native notification-area icon or 500 ms toggle overlay with GPUI.
