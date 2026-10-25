@@ -583,10 +583,7 @@ unsafe fn show_toggle_overlay(enabled: bool) {
         let title = wide("RTX HDR");
         let instance = GetModuleHandleW(null());
         hwnd = wm::CreateWindowExW(
-            wm::WS_EX_LAYERED
-                | wm::WS_EX_NOACTIVATE
-                | wm::WS_EX_TOOLWINDOW
-                | wm::WS_EX_TOPMOST,
+            wm::WS_EX_LAYERED | wm::WS_EX_NOACTIVATE | wm::WS_EX_TOOLWINDOW | wm::WS_EX_TOPMOST,
             class.as_ptr(),
             title.as_ptr(),
             wm::WS_POPUP,
