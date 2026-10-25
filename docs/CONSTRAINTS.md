@@ -12,6 +12,9 @@
   `EEE812AB8FF74975D3CC7FE77130F5766911B6CA2D9C42C1156376A6C13F79F0`.
 - Unknown NVIDIA versions, failed signature checks, missing exports, or invalid
   read data make the application read-only.
+- The NVIDIA worker must initialize an STA COM apartment and confirm
+  `NvCplApiIsUxdServiceRunning` before `NvCplApiInit`; writes are refused if either
+  prerequisite fails.
 - Settings and startup entries may only be written under `HKCU`.
 - RTX Video HDR, Windows HDR, and VSR are distinct settings and must not be
   treated interchangeably.

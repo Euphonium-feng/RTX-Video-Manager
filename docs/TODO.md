@@ -2,20 +2,30 @@
 
 ## In Progress
 
-- Implement the approved Rust/Win32 application and cloud build workflow.
+- Verify the final GitHub Actions artifact after initializing STA COM and checking
+  the NVIDIA UXD service before opening the NvCpl session.
+
+## Verified
+
+- The repository, tray application, tests, and initial cloud build are implemented.
+- On 2026-10-25 a direct reversible probe using `0x318` produced `enabled=1`,
+  `active=1` during Chrome SDR video playback, then restored `enabled=0`,
+  `active=0`. The same sequence omitted by the shipped app had left `active=0`.
 
 ## Pending
 
-- Build the Release artifact in GitHub Actions and obtain a green run.
-- Download the artifact and verify the reversible hardware transaction.
-- Manually verify tray behavior, shortcut recording, startup, Explorer restart,
-  supported Chrome playback, rollback paths, working set, and idle CPU.
+- Push the fix and obtain a green GitHub Actions run.
+- Download that artifact and verify the final app changes NVIDIA App's HDR state
+  and Chrome playback becomes active within one second.
+- Verify restart persistence, VSR and six tuning fields, tray behavior, shortcut
+  conflict, single instance, Explorer restart, startup entry, rollback, working
+  set, and idle CPU.
 
 ## Blockers
 
-- GitHub CLI authentication and private repository creation are still required.
+- None.
 
 ## Next Action
 
-Write the Rust package, unit tests, Windows resource icon, and GitHub Actions
-workflow, then push and watch the first build.
+Commit and push the COM/UXD fix, then watch the GitHub Actions run with
+`gh run watch --exit-status`.

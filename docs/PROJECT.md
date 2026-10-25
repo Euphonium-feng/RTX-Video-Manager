@@ -12,6 +12,8 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 - Toggle only RTX Video HDR. Do not toggle Windows HDR or RTX Video Super Resolution.
 - Preserve the existing NVIDIA HDR tuning fields when toggling.
 - Refuse writes when the NVIDIA App/NvCpl build or HDR state is unsupported.
+- Require the NVIDIA UXD display service and an STA COM session before using the
+  private NvCpl API.
 - Start with Windows by default; expose a tray option to disable this.
 - Run without administrator privileges or network access.
 

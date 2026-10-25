@@ -27,6 +27,7 @@ use windows_sys::Win32::Security::WinTrust::{
     WTD_SAFER_FLAG, WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY, WTD_UICONTEXT_EXECUTE,
     WTD_UI_NONE,
 };
+use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryExW};
 use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
@@ -155,12 +156,34 @@ enum WorkerEvent {
 
 type InitFn = unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32;
 type CloseFn = unsafe extern "system" fn() -> i32;
+type IsUxdServiceRunningFn = unsafe extern "system" fn(*mut u8) -> i32;
 type GetSettingFn = unsafe extern "system" fn(u32, *const u64, u32, *mut c_void, usize) -> i32;
 type SetSettingFn = unsafe extern "system" fn(u32, *const u64, u32, *const c_void, usize) -> i32;
 type ExecuteFn = unsafe extern "system" fn(u32, u32, i32) -> i32;
 
+struct ComApartment;
+
+impl ComApartment {
+    unsafe fn initialize() -> Result<Self, AppError> {
+        let result = CoInitializeEx(null(), COINIT_APARTMENTTHREADED as u32);
+        if result < 0 {
+            return Err(AppError::ComInitializationFailed(result));
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+}
+
 struct NvBackend {
     module: *mut c_void,
+    _com: ComApartment,
     close: CloseFn,
     get_setting: GetSettingFn,
     set_setting: SetSettingFn,
@@ -177,6 +200,8 @@ impl NvBackend {
         }
         verify_nvidia_signature(&path)?;
 
+        // The private NvCpl API talks to the UXD service through COM on this thread.
+        let com = ComApartment::initialize()?;
         let path_wide = wide(&path.to_string_lossy());
         let module = LoadLibraryExW(
             path_wide.as_ptr(),
@@ -189,6 +214,8 @@ impl NvBackend {
 
         let p_init = GetProcAddress(module, c"NvCplApiInit".as_ptr().cast());
         let p_close = GetProcAddress(module, c"NvCplApiClose".as_ptr().cast());
+        let p_is_service_running =
+            GetProcAddress(module, c"NvCplApiIsUxdServiceRunning".as_ptr().cast());
         let p_get = GetProcAddress(module, c"NvCplApiGetSetting".as_ptr().cast());
         let p_set = GetProcAddress(module, c"NvCplApiSetSetting".as_ptr().cast());
         let p_execute = GetProcAddress(module, c"NvCplApiExecute".as_ptr().cast());
@@ -199,6 +226,10 @@ impl NvBackend {
         if p_close.is_none() {
             FreeLibrary(module);
             return Err(AppError::MissingExport("NvCplApiClose"));
+        }
+        if p_is_service_running.is_none() {
+            FreeLibrary(module);
+            return Err(AppError::MissingExport("NvCplApiIsUxdServiceRunning"));
         }
         if p_get.is_none() {
             FreeLibrary(module);
@@ -215,9 +246,26 @@ impl NvBackend {
 
         let init: InitFn = std::mem::transmute(p_init.unwrap());
         let close: CloseFn = std::mem::transmute(p_close.unwrap());
+        let is_service_running: IsUxdServiceRunningFn =
+            std::mem::transmute(p_is_service_running.unwrap());
         let get_setting: GetSettingFn = std::mem::transmute(p_get.unwrap());
         let set_setting: SetSettingFn = std::mem::transmute(p_set.unwrap());
         let execute: ExecuteFn = std::mem::transmute(p_execute.unwrap());
+
+        let mut service_running = 0u8;
+        let service_code = is_service_running(&mut service_running);
+        if service_code != 0 {
+            FreeLibrary(module);
+            return Err(AppError::ApiFailed(
+                "NvCplApiIsUxdServiceRunning",
+                service_code,
+            ));
+        }
+        if service_running == 0 {
+            FreeLibrary(module);
+            return Err(AppError::UxdServiceUnavailable);
+        }
+
         let init_code = init(null_mut(), null_mut());
         if init_code != 0 {
             FreeLibrary(module);
@@ -226,6 +274,7 @@ impl NvBackend {
 
         let backend = Self {
             module,
+            _com: com,
             close,
             get_setting,
             set_setting,

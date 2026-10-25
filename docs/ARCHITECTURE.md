@@ -2,8 +2,9 @@
 
 ## Current State
 
-The repository is a new Rust implementation. The NVIDIA ABI and field layout were
-verified with a read-only probe before implementation; no runtime code exists yet.
+The repository contains the implemented Rust/Win32 tray application, GitHub Actions
+build, and unit tests. Local direct probing confirmed the current NVIDIA App's HDR
+setting at `0x318`; the final cloud artifact still needs end-to-end revalidation.
 
 ## Target Components
 
@@ -20,10 +21,13 @@ verified with a read-only probe before implementation; no runtime code exists ye
 1. A named mutex enforces one instance.
 2. A dedicated worker thread owns the NvCpl session so NVIDIA calls never block the
    window message loop.
-3. The worker validates the exact DLL, signature, exports, and a 48-byte read probe.
-4. Toggle requests read `0x318`, change only the enabled field, write, read back,
-   and restore the original bytes on failure.
-5. Worker results return to the tray through posted window messages.
+3. Before loading NvCpl, the worker initializes an STA COM apartment and verifies
+   that the NVIDIA UXD display service is running.
+4. The worker validates the exact DLL, signature, exports, and a 48-byte read probe.
+5. Toggle requests read `0x318`, change only the enabled field, write, commit with
+   `NvCplApiExecute(0x10000, 0, -1)`, read back, and restore the original bytes on
+   failure.
+6. Worker results return to the tray through posted window messages.
 
 ## Glossary
 

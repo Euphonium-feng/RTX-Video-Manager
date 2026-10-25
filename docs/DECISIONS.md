@@ -25,3 +25,15 @@ Windows x64 executable. The local machine only runs and validates the artifact.
 
 Toggle NVIDIA's global RTX Video HDR setting. Do not add a Chrome extension or CSS
 overlay workaround; those change rendering scope and can disable VSR with HDR.
+
+## ADR-005: STA COM and UXD service are mandatory
+
+Initialize STA COM on the NVIDIA worker and require
+`NvCplApiIsUxdServiceRunning` before `NvCplApiInit`. Without the complete session
+setup, `NvCplApiSetSetting` can report success and change the stored `0x318` value
+while Chrome's `hdrStatus` remains inactive.
+
+Evidence: on 2026-10-25 the full `0x318` transaction produced `active=1` during
+Chrome playback and returned to `active=0` after restoring the original state.
+Rejected: treating `SetSetting`/`Execute` success alone as proof that the feature is
+active, or falling back to Windows HDR.

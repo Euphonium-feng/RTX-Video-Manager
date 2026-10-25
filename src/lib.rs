@@ -40,8 +40,10 @@ pub enum AppError {
     SignatureInvalid,
     NvCplLoadFailed(u32),
     MissingExport(&'static str),
+    ComInitializationFailed(i32),
     InitFailed(i32),
     ApiFailed(&'static str, i32),
+    UxdServiceUnavailable,
     InvalidData(&'static str),
     HdrUnsupported,
     NoHdrDisplay,
@@ -63,9 +65,15 @@ impl AppError {
             Self::SignatureInvalid => "nvcpl.dll 的数字签名无效。".into(),
             Self::NvCplLoadFailed(code) => format!("无法加载 nvcpl.dll（错误 {code}）。"),
             Self::MissingExport(name) => format!("nvcpl.dll 缺少导出：{name}。"),
+            Self::ComInitializationFailed(code) => {
+                format!("无法初始化 Windows COM 会话（HRESULT 0x{code:08X}）。")
+            }
             Self::InitFailed(code) => format!("NVIDIA 控制接口初始化失败（{code}）。"),
             Self::ApiFailed(operation, code) => {
                 format!("NVIDIA 接口 {operation} 调用失败（{code}）。")
+            }
+            Self::UxdServiceUnavailable => {
+                "NVIDIA 显示设置服务未运行，已禁止修改 HDR。".into()
             }
             Self::InvalidData(detail) => format!("NVIDIA 返回的数据无效：{detail}。"),
             Self::HdrUnsupported => "当前 GPU 或显示器不支持 RTX 视频 HDR。".into(),
