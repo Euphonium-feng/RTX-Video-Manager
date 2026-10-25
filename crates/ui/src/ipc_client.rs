@@ -128,7 +128,14 @@ fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sende
 
         let mut available = 0u32;
         let peeked = unsafe {
-            PeekNamedPipe(handle.raw(), null_mut(), 0, null_mut(), &mut available, null_mut())
+            PeekNamedPipe(
+                handle.raw(),
+                null_mut(),
+                0,
+                null_mut(),
+                &mut available,
+                null_mut(),
+            )
         };
         if peeked == 0 {
             let _ = events.send(ClientEvent::Disconnected("后台连接已断开。".into()));
