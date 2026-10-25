@@ -13,7 +13,9 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 - Preserve the existing NVIDIA HDR tuning fields when toggling.
 - Show a brief bottom-center overlay on successful toggles that reports whether
   RTX Video HDR is on or off.
-- Provide a direct on/off button for RTX Video HDR in the settings window.
+- Provide an on-demand GPUI control console with a direct HDR action, live state,
+  hotkey recording, startup/notification settings, and diagnostics.
+- Keep the resident host lightweight by running GPUI only while the console is open.
 - Refuse writes when the NVIDIA App/NvCpl build or HDR state is unsupported.
 - Require the NVIDIA UXD display service and an STA COM session before using the
   private NvCpl API.
@@ -28,6 +30,8 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 - A failed or inconsistent write restores the previous 48-byte HDR state.
 - The generated release artifact comes from a successful GitHub Actions run.
 - Idle private working set is below 15 MiB and idle CPU is effectively zero.
+- Closing the console terminates the GPUI process; tray and shortcut behavior remain.
+- The release archive contains `RtxHdrSwitch.exe` and `RtxHdrSettings.exe` together.
 
 ## Reference Environment
 
@@ -41,3 +45,4 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 
 - Chrome extensions, CSS video filtering, or content classification.
 - Windows HDR switching, VSR control, auto-update, installers, or public support.
+- Replacing the native notification-area icon or 300 ms toggle overlay with GPUI.

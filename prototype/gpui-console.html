@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RTX HDR 控制台原型</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #0b1215;
+      --panel: #121c20;
+      --raised: #19262c;
+      --rule: #2a4046;
+      --text: #edf5f4;
+      --muted: #8ca1a5;
+      --signal: #65dde6;
+      --signal-soft: rgba(101, 221, 230, 0.13);
+      --warm: #f0b35c;
+      --danger: #ff7b70;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --sans: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      --display: "Bahnschrift", "Segoe UI Variable Display", sans-serif;
+      --mono: "Cascadia Mono", "Consolas", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 0%, rgba(101, 221, 230, 0.09), transparent 32rem),
+        repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, transparent 1px 72px),
+        #071014;
+    }
+
+    button { font: inherit; }
+
+    .window {
+      width: min(760px, calc(100vw - 40px));
+      height: 540px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid rgba(122, 176, 184, 0.24);
+      border-radius: 12px;
+      background: var(--ink);
+      box-shadow: 0 34px 100px rgba(0, 0, 0, 0.55);
+    }
+
+    .titlebar {
+      height: 35px;
+      flex: 0 0 35px;
+      display: flex;
+      align-items: center;
+      padding-left: 13px;
+      border-bottom: 1px solid var(--rule);
+      background: linear-gradient(#101a1e, #0d171a);
+      user-select: none;
+    }
+
+    .titlebar-mark {
+      width: 7px;
+      height: 7px;
+      margin-right: 9px;
+      border-radius: 50%;
+      background: var(--signal);
+      box-shadow: 0 0 14px rgba(101, 221, 230, 0.55);
+    }
+
+    .titlebar-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      color: #c6d4d5;
+    }
+
+    .titlebar-state {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .window-controls {
+      margin-left: auto;
+      height: 100%;
+      display: flex;
+    }
+
+    .window-control {
+      width: 35px;
+      border: 0;
+      color: #b8c8ca;
+      background: transparent;
+      font-family: var(--display);
+      font-size: 14px;
+    }
+
+    .window-control:hover { background: #233137; color: var(--text); }
+    .window-control.close:hover { background: #b64a43; color: white; }
+
+    .console {
+      min-height: 0;
+      flex: 1;
+      padding: 20px 28px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 178px;
+      overflow: hidden;
+      border: 1px solid var(--rule);
+      border-radius: var(--radius-md);
+      background:
+        linear-gradient(115deg, rgba(101, 221, 230, 0.055), transparent 45%),
+        var(--panel);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: 16px;
+      bottom: 14px;
+      width: 42%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(101, 221, 230, .30));
+    }
+
+    .hero-main {
+      height: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 176px;
+      gap: 20px;
+      padding: 18px 22px 16px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .16em;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .status-dot.on {
+      background: var(--signal);
+      box-shadow: 0 0 13px rgba(101, 221, 230, .65);
+    }
+
+    .headline {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 34px;
+      line-height: 1;
+      letter-spacing: -.02em;
+      font-weight: 600;
+    }
+
+    .subline {
+      margin-top: 8px;
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .meter {
+      margin-top: 18px;
+      max-width: 390px;
+    }
+
+    .meter-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: .08em;
+    }
+
+    .meter-value {
+      color: var(--text);
+      font-family: var(--display);
+      font-size: 13px;
+      letter-spacing: .02em;
+    }
+
+    .track {
+      position: relative;
+      height: 5px;
+      border-radius: 99px;
+      background: #26363c;
+    }
+
+    .fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 72%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #34747d, var(--signal));
+    }
+
+    .marker {
+      position: absolute;
+      top: 50%;
+      left: 72%;
+      width: 2px;
+      height: 13px;
+      transform: translate(-1px, -50%);
+      border-radius: 1px;
+      background: #f4ffff;
+      box-shadow: 0 0 9px rgba(101, 221, 230, .8);
+    }
+
+    .meter-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      color: #64797d;
+      font-family: var(--mono);
+      font-size: 9px;
+    }
+
+    .hero-action {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .state-badge {
+      align-self: center;
+      padding: 5px 9px;
+      border: 1px solid var(--rule);
+      border-radius: 99px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .state-badge.on {
+      border-color: rgba(101, 221, 230, .38);
+      color: var(--signal);
+      background: var(--signal-soft);
+    }
+
+    .toggle {
+      min-height: 48px;
+      border: 1px solid rgba(101, 221, 230, .34);
+      border-radius: 10px;
+      color: #061013;
+      background: var(--signal);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .toggle:hover { background: #84e9f0; }
+    .toggle.off { color: var(--text); background: var(--raised); border-color: var(--rule); }
+    .toggle.off:hover { background: #203138; }
+    .toggle:disabled { cursor: default; opacity: .45; }
+
+    .action-hint {
+      min-height: 16px;
+      color: #64797d;
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .preferences {
+      overflow: hidden;
+      border: 1px solid var(--rule);
+      border-radius: var(--radius-md);
+      background: var(--panel);
+    }
+
+    .setting-row {
+      min-height: 47px;
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 18px;
+      border-bottom: 1px solid rgba(42, 64, 70, .7);
+    }
+
+    .setting-row:last-child { border-bottom: 0; }
+
+    .setting-label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .keycaps {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .key {
+      min-width: 30px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      padding: 0 7px;
+      border: 1px solid #395158;
+      border-radius: 6px;
+      color: #dceaeb;
+      background: #18282d;
+      font-family: var(--display);
+      font-size: 11px;
+      box-shadow: inset 0 -1px 0 rgba(255,255,255,.05);
+    }
+
+    .record {
+      min-width: 64px;
+      height: 29px;
+      border: 1px solid var(--rule);
+      border-radius: 7px;
+      color: #dbe7e8;
+      background: var(--raised);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .record:hover { border-color: #4b7179; background: #203138; }
+    .record.recording { color: var(--warm); border-color: rgba(240, 179, 92, .5); }
+
+    .setting-copy { min-width: 0; }
+    .setting-copy strong {
+      display: block;
+      color: #dfe9e9;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .setting-copy small {
+      color: #687d81;
+      font-size: 10px;
+    }
+
+    .switch {
+      position: relative;
+      width: 38px;
+      height: 21px;
+      border: 1px solid #3c555c;
+      border-radius: 99px;
+      background: #1b292e;
+      cursor: pointer;
+      transition: background .14s ease, border-color .14s ease;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #7e9295;
+      transition: transform .14s ease, background .14s ease;
+    }
+
+    .switch.on {
+      border-color: rgba(101, 221, 230, .45);
+      background: rgba(101, 221, 230, .20);
+    }
+
+    .switch.on::after {
+      transform: translateX(17px);
+      background: var(--signal);
+    }
+
+    .diagnostics-toggle {
+      width: 100%;
+      min-height: 38px;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      border: 0;
+      border-top: 1px solid rgba(42, 64, 70, .7);
+      color: var(--muted);
+      background: transparent;
+      text-align: left;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .diagnostics-toggle span:last-child { margin-left: auto; }
+    .diagnostics-toggle:hover { color: var(--text); background: rgba(255,255,255,.018); }
+
+    .diagnostics {
+      display: none;
+      padding: 12px 18px 15px;
+      border-top: 1px solid rgba(42, 64, 70, .7);
+      background: #0f181c;
+    }
+
+    .diagnostics.open { display: block; }
+
+    .diagnostic-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px 18px;
+    }
+
+    .diagnostic-item small {
+      display: block;
+      margin-bottom: 2px;
+      color: #607578;
+      font-size: 9px;
+      letter-spacing: .04em;
+    }
+
+    .diagnostic-item span {
+      color: #c8d6d7;
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .footer {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .footer-state {
+      color: #63787c;
+      font-family: var(--mono);
+      font-size: 9px;
+    }
+
+    .footer-actions {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .secondary,
+    .primary {
+      height: 32px;
+      padding: 0 15px;
+      border-radius: 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .secondary {
+      border: 1px solid var(--rule);
+      color: #c5d2d3;
+      background: transparent;
+    }
+
+    .secondary:hover { background: var(--raised); }
+
+    .primary {
+      border: 1px solid rgba(101, 221, 230, .4);
+      color: #061013;
+      background: var(--signal);
+      font-weight: 700;
+    }
+
+    .primary:hover { background: #84e9f0; }
+
+    .error-banner {
+      display: none;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 123, 112, .35);
+      border-radius: 9px;
+      color: #ffc0ba;
+      background: rgba(255, 123, 112, .08);
+      font-size: 11px;
+    }
+
+    .error-banner.visible { display: block; }
+
+    .state-picker {
+      position: fixed;
+      left: 18px;
+      bottom: 18px;
+      display: flex;
+      gap: 5px;
+      padding: 6px;
+      border: 1px solid #243a40;
+      border-radius: 9px;
+      background: rgba(7, 16, 20, .92);
+    }
+
+    .state-picker button {
+      padding: 5px 8px;
+      border: 0;
+      border-radius: 5px;
+      color: #82979a;
+      background: transparent;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .state-picker button.active { color: var(--text); background: #1a2a2f; }
+
+    @media (max-width: 640px) {
+      body { padding: 10px; }
+      .window { width: 100%; height: min(540px, calc(100vh - 20px)); }
+      .console { padding: 16px; }
+      .hero-main { grid-template-columns: 1fr; }
+      .hero-action { align-items: flex-start; }
+      .state-badge { align-self: flex-start; }
+      .setting-row { grid-template-columns: 78px minmax(0, 1fr) auto; }
+      .state-picker { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="window" aria-label="RTX HDR 控制台">
+    <header class="titlebar">
+      <i class="titlebar-mark"></i>
+      <span class="titlebar-title">RTX HDR 控制台</span>
+      <span class="titlebar-state">· 后台运行中</span>
+      <div class="window-controls" aria-hidden="true">
+        <button class="window-control">−</button>
+        <button class="window-control close">×</button>
+      </div>
+    </header>
+
+    <section class="console">
+      <article class="hero">
+        <div class="hero-main">
+          <div>
+            <div class="eyebrow"><i class="status-dot on" id="dot"></i><span id="eyebrow">视频动态范围 · 已开启</span></div>
+            <h1 class="headline">RTX VIDEO HDR</h1>
+            <div class="subline" id="subline">当前视频正在以 HDR10 输出</div>
+            <div class="meter" id="meter">
+              <div class="meter-head">
+                <span>实时峰值亮度</span>
+                <span class="meter-value" id="peak">1024 nits</span>
+              </div>
+              <div class="track">
+                <div class="fill" id="fill"></div>
+                <div class="marker" id="marker"></div>
+              </div>
+              <div class="meter-labels"><span id="min">400</span><span>亮度范围</span><span id="max">1440</span></div>
+            </div>
+          </div>
+          <div class="hero-action">
+            <span class="state-badge on" id="badge">● 已开启</span>
+            <button class="toggle" id="toggle">关闭 RTX HDR</button>
+            <span class="action-hint" id="actionHint">Ctrl+Alt+H 可随时切换</span>
+          </div>
+        </div>
+      </article>
+
+      <div class="error-banner" id="error">NVIDIA 接口不可用，当前为只读状态。</div>
+
+      <section class="preferences" aria-label="交互设置">
+        <div class="setting-row">
+          <span class="setting-label">快捷键</span>
+          <div class="keycaps" id="keycaps">
+            <span class="key">Ctrl</span><span class="key">Alt</span><span class="key">H</span>
+          </div>
+          <button class="record" id="record">录制</button>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">启动</span>
+          <div class="setting-copy"><strong>登录 Windows 时自动启动</strong><small>只启动后台托盘，不打开控制台</small></div>
+          <button class="switch on" id="startup" aria-label="登录 Windows 时自动启动"></button>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">反馈</span>
+          <div class="setting-copy"><strong>切换时显示系统浮层</strong><small>屏幕下方 300 ms 半透明提示</small></div>
+          <button class="switch on" id="notifications" aria-label="切换时显示系统浮层"></button>
+        </div>
+        <button class="diagnostics-toggle" id="diagnosticsToggle"><span>系统诊断</span><span id="diagnosticsChevron">⌄</span></button>
+        <div class="diagnostics" id="diagnostics">
+          <div class="diagnostic-grid">
+            <div class="diagnostic-item"><small>NVCpl 版本</small><span>8.17.15.5527</span></div>
+            <div class="diagnostic-item"><small>UXD 服务</small><span>RUNNING</span></div>
+            <div class="diagnostic-item"><small>错误码</small><span>0</span></div>
+            <div class="diagnostic-item"><small>峰值</small><span id="diagPeak">1024</span></div>
+            <div class="diagnostic-item"><small>中间灰</small><span>50</span></div>
+            <div class="diagnostic-item"><small>对比度 / 饱和度</small><span>0 / 0</span></div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span class="footer-state" id="footerState">HDR 0x318 · 后端已连接</span>
+        <div class="footer-actions">
+          <button class="secondary" id="reset">恢复默认</button>
+          <button class="primary" id="save">保存更改</button>
+        </div>
+      </footer>
+    </section>
+  </main>
+
+  <nav class="state-picker" aria-label="原型状态预览">
+    <button class="active" data-state="on">已开启</button>
+    <button data-state="off">已关闭</button>
+    <button data-state="busy">切换中</button>
+    <button data-state="error">不可用</button>
+    <button data-state="disconnected">断线</button>
+  </nav>
+
+  <script>
+    const state = {
+      enabled: true,
+      active: true,
+      busy: false,
+      error: false,
+      disconnected: false,
+      recording: false,
+      startup: true,
+      notifications: true,
+      hotkey: ["Ctrl", "Alt", "H"],
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function render() {
+      const operable = !state.busy && !state.error && !state.disconnected;
+      const on = state.enabled && !state.error;
+      $("dot").className = `status-dot ${on ? "on" : ""}`;
+      $("eyebrow").textContent = state.disconnected ? "后台连接已断开" : state.error ? "后端不可用 · 只读" : `视频动态范围 · ${state.enabled ? "已开启" : "已关闭"}`;
+      $("subline").textContent = state.disconnected
+        ? "控制台无法连接后台，请重新启动工具"
+        : state.error
+          ? "未检测到活动的 HDR10 显示器"
+          : state.enabled
+            ? state.active ? "当前视频正在以 HDR10 输出" : "已开启，等待支持的视频开始播放"
+            : "当前视频以 SDR 输出";
+      $("badge").textContent = state.disconnected ? "● 已断线" : state.error ? "● 不可用" : state.busy ? "● 正在切换" : state.enabled ? "● 已开启" : "○ 已关闭";
+      $("badge").className = `state-badge ${on ? "on" : ""}`;
+      $("toggle").textContent = state.busy ? "正在切换…" : state.enabled ? "关闭 RTX HDR" : "开启 RTX HDR";
+      $("toggle").className = `toggle ${state.enabled ? "" : "off"}`;
+      $("toggle").disabled = !operable;
+      $("error").className = `error-banner ${state.error || state.disconnected ? "visible" : ""}`;
+      $("error").textContent = state.disconnected ? "后台连接已断开。保存的 HDR 状态不受影响。" : "NVIDIA 返回：未检测到活动的 HDR10 显示器。";
+      $("meter").style.opacity = state.error || state.disconnected ? ".35" : "1";
+      $("peak").textContent = state.enabled ? "1024 nits" : "—";
+      $("diagPeak").textContent = state.enabled ? "1024" : "—";
+      $("fill").style.width = state.enabled ? "72%" : "0%";
+      $("marker").style.left = state.enabled ? "72%" : "0%";
+      $("record").textContent = state.recording ? "请按键…" : "录制";
+      $("record").className = `record ${state.recording ? "recording" : ""}`;
+      $("startup").className = `switch ${state.startup ? "on" : ""}`;
+      $("notifications").className = `switch ${state.notifications ? "on" : ""}`;
+      $("footerState").textContent = state.disconnected ? "IPC 未连接 · 后台未运行" : `HDR 0x318 · ${state.error ? "只读" : "后端已连接"}`;
+      $("keycaps").replaceChildren(...state.hotkey.map((key) => {
+        const item = document.createElement("span");
+        item.className = "key";
+        item.textContent = key;
+        return item;
+      }));
+      $("actionHint").textContent = state.recording ? "按下包含修饰键的组合，Esc 取消" : `${state.hotkey.join("+")} 可随时切换`;
+    }
+
+    $("toggle").addEventListener("click", () => {
+      state.busy = true;
+      render();
+      setTimeout(() => {
+        state.enabled = !state.enabled;
+        state.active = state.enabled;
+        state.busy = false;
+        render();
+      }, 380);
+    });
+
+    $("record").addEventListener("click", () => {
+      state.recording = !state.recording;
+      render();
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (!state.recording) return;
+      event.preventDefault();
+      if (event.key === "Escape" && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+        state.recording = false;
+        render();
+        return;
+      }
+      const modifierKeys = ["Control", "Alt", "Shift", "Meta"];
+      if (modifierKeys.includes(event.key)) return;
+      const modifiers = [];
+      if (event.ctrlKey) modifiers.push("Ctrl");
+      if (event.altKey) modifiers.push("Alt");
+      if (event.shiftKey) modifiers.push("Shift");
+      if (event.metaKey) modifiers.push("Win");
+      if (!modifiers.length) return;
+      let key = event.key === " " ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.key;
+      state.hotkey = [...modifiers, key];
+      state.recording = false;
+      render();
+    });
+
+    $("startup").addEventListener("click", () => { state.startup = !state.startup; render(); });
+    $("notifications").addEventListener("click", () => { state.notifications = !state.notifications; render(); });
+    $("diagnosticsToggle").addEventListener("click", () => {
+      $("diagnostics").classList.toggle("open");
+      $("diagnosticsChevron").textContent = $("diagnostics").classList.contains("open") ? "⌃" : "⌄";
+    });
+    $("reset").addEventListener("click", () => {
+      state.hotkey = ["Ctrl", "Alt", "H"];
+      state.startup = true;
+      state.notifications = true;
+      $("save").textContent = "保存更改";
+      render();
+    });
+    $("save").addEventListener("click", () => {
+      $("save").textContent = "已保存";
+      setTimeout(() => { $("save").textContent = "保存更改"; }, 900);
+    });
+
+    document.querySelector(".state-picker").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-state]");
+      if (!button) return;
+      document.querySelectorAll(".state-picker button").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      state.busy = false;
+      state.error = false;
+      state.disconnected = false;
+      state.enabled = button.dataset.state !== "off";
+      state.active = state.enabled;
+      if (button.dataset.state === "busy") state.busy = true;
+      if (button.dataset.state === "error") state.error = true;
+      if (button.dataset.state === "disconnected") state.disconnected = true;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

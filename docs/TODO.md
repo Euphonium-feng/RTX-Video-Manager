@@ -2,7 +2,8 @@
 
 ## In Progress
 
-- Complete the remaining manual tray and failure-path checks.
+- Validate the GPUI console, host IPC, dual-EXE packaging, and failure-path recovery
+  against a green GitHub Actions artifact.
 
 ## Verified
 
@@ -21,18 +22,22 @@
 - Pixel comparison on a static SDR video showed the `0x318` path changed 32.5% of
   pixels by more than 10 RGB levels; the unrelated NvBackend `TrueHDR` path changed
   zero pixels.
+- GitHub Actions run `40189900273` is green for the committed native layout and
+  overlay baseline.
+- The runnable calibration-dashboard prototype is in `prototype/gpui-console.html`
+  and has been rendered at 900 x 700 for visual review.
 
 ## Pending
 
-- Visually confirm the Chrome brightness/color difference and measure activation
-  latency from the physical shortcut.
-- Verify the compact 240 x 48 overlay, 50% opacity, full text, position, and
-  300 ms duration on the final artifact.
-- Verify the settings-window HDR button label, disabled state, toggle behavior,
-  overlay feedback, and live refresh after a shortcut/tray toggle.
-- Verify tray icons and menus, shortcut recording, restart persistence, single
-  instance opening settings, Explorer restart, startup entry, rollback injection,
-  no-HDR-display/Windows-HDR-off/Surround states, and idle CPU.
+- Wait for a green dual-EXE cloud run and inspect compile, Clippy, formatting, and
+  dependency-lock results.
+- Download the artifact and verify the GPUI console opens, toggles HDR, saves
+  settings, records a shortcut, reconnects, and exits completely on close.
+- Verify that tray, shortcut, native overlay, startup entry, single instance,
+  Explorer restart, rollback injection, no-HDR-display, Windows-HDR-off, and
+  Surround behavior remain unchanged.
+- Record host idle memory/CPU, console startup time, console private memory, and both
+  executable sizes.
 
 ## Blockers
 
@@ -40,4 +45,5 @@
 
 ## Next Action
 
-Run the physical shortcut in Chrome, then complete the remaining manual checks.
+Watch the first GPUI cloud run, fix the actual compile/lint cause, and download the
+green dual-EXE artifact for Windows acceptance.

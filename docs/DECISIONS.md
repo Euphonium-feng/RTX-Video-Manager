@@ -8,6 +8,9 @@ cross-platform UI crates.
 
 Rejected: C# WinForms, Tauri, `tray-icon`, `global-hotkey`.
 
+Superseded for application pages by ADR-007. The resident host, tray, shortcut, and
+overlay remain native.
+
 ## ADR-002: Strict private-ABI gate
 
 Control RTX Video HDR through NVIDIA's private `nvcpl.dll` setting `0x318`.
@@ -49,3 +52,23 @@ not cover the video. Hide it with a 300 ms timer.
 Rejected: Windows toast notifications as the only feedback because notification
 settings and Focus Assist can suppress them, and an HTML/WebView overlay because it
 would add substantial runtime weight.
+
+## ADR-007: On-demand GPUI console with a native host
+
+Keep `RtxHdrSwitch.exe` as a GPUI-free Win32 process and run `RtxHdrSettings.exe`
+only while the control console is open. The console communicates with the host over
+a one-client, same-user named pipe; it never loads NvCpl or writes registry values.
+Tray, hotkey registration, and the 300 ms overlay stay native because GPUI has no
+tray API and spawning a renderer for every shortcut would add latency and memory.
+
+Rejected: putting GPUI in the resident host, implementing a WebView/Tauri console,
+or replacing native system chrome with per-toggle GPUI windows.
+
+## ADR-008: Pin GPUI Kit 0.8.0
+
+Depend on `gpui-kit = "=0.8.0"` and its exact `gpui-pre 0.3.9` snapshot. Do not
+mix in official `gpui 0.2.2` or enable `gpui-fast`. The prototype is HTML/CSS only
+for design approval; production remains native GPUI.
+
+Rejected: independent `gpui-component` versioning, a WebView production UI, and
+unpinned snapshot updates.

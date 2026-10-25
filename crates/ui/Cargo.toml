@@ -1,0 +1,23 @@
+[package]
+name = "rtx-hdr-settings"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "GPUI control console for RTX Video HDR"
+publish = false
+
+[dependencies]
+gpui-kit = "=0.8.0"
+rtx-hdr-switch = { path = "../.." }
+serde_json = "1"
+windows-sys = { version = "=0.59.0", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+gpui-kit = { version = "=0.8.0", features = ["test-support"] }

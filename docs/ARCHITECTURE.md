@@ -2,16 +2,21 @@
 
 ## Current State
 
-The repository contains the implemented Rust/Win32 tray application, GitHub Actions
-build, and unit tests. Local direct probing confirmed the current NVIDIA App's HDR
-setting at `0x318`; the final cloud artifact still needs end-to-end revalidation.
+The repository contains a lightweight Rust/Win32 resident host, an on-demand GPUI
+control console, GitHub Actions packaging, and unit tests. The native host owns all
+system integration and NVIDIA access; the GPUI process is a transient, unprivileged
+view over a local IPC contract.
 
 ## Target Components
 
 - `src/lib.rs`: pure domain types, settings validation, HDR decoding and encoding,
   write/readback/rollback transaction, and unit-testable transport abstraction.
 - `src/main.rs`: Win32 application entry, hidden message window, tray icon, global
-  hotkey, native settings window, registry integration, and NVIDIA worker.
+  hotkey, native overlay, registry integration, NVIDIA worker, and console lifecycle.
+- `src/host_ipc.rs`: local named-pipe server, same-user/session validation, command
+  queue, and snapshot/event writer.
+- `src/ipc.rs`: versioned IPC DTOs and length-prefixed JSON framing.
+- `crates/ui/`: `RtxHdrSettings.exe`, the GPUI console; it never links NvCpl.
 - `assets/`: icon and manifest resources compiled into the executable.
 - `.github/workflows/build.yml`: formatting, lint, tests, Release build, packaging,
   and artifact upload.
@@ -19,22 +24,23 @@ setting at `0x318`; the final cloud artifact still needs end-to-end revalidation
 ## Runtime Flow
 
 1. A named mutex enforces one instance.
-2. A dedicated worker thread owns the NvCpl session so NVIDIA calls never block the
+2. The host starts a one-client named-pipe server for the optional GPUI console.
+3. A dedicated worker thread owns the NvCpl session so NVIDIA calls never block the
    window message loop.
-3. Before loading NvCpl, the worker initializes an STA COM apartment and verifies
+4. Before loading NvCpl, the worker initializes an STA COM apartment and verifies
    that the NVIDIA UXD display service is running.
-4. The worker validates the exact DLL, signature, exports, and a 48-byte read probe.
-5. Toggle requests read `0x318`, change only the enabled field, write, commit with
+5. The worker validates the exact DLL, signature, exports, and a 48-byte read probe.
+6. Toggle requests read `0x318`, change only the enabled field, write, commit with
    `NvCplApiExecute(0x10000, 0, -1)`, read back, and restore the original bytes on
    failure.
-6. Worker results return to the tray through posted window messages.
-7. Interactive launches show the settings window; `--background` launches only the
+7. Worker results return to the tray through posted window messages and are also
+   published as snapshots to a connected console.
+8. Interactive launches spawn the console; `--background` launches only the
    tray so the current-user startup entry stays silent.
-8. Successful toggles show a non-activating, topmost overlay at the bottom center
+9. Successful toggles show a non-activating, topmost overlay at the bottom center
    of the active monitor for 300 ms at 50% opacity.
-9. The settings window includes a direct HDR action button that follows the live
-   state and busy flag while using the same worker transaction as the tray and
-   shortcut.
+10. Closing the console exits `RtxHdrSettings.exe`; the host, tray, hotkey, and last
+    HDR state remain active.
 
 ## Glossary
 

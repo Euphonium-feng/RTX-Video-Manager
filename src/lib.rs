@@ -1,6 +1,8 @@
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+pub mod ipc;
+
 pub const NVCPL_RELATIVE_PATH: &str = r"NVIDIA Corporation\NVIDIA App\NvCpl\nvcpl.dll";
 pub const NVCPL_SHA256_HEX: &str =
     "eee812ab8ff74975d3cc7fe77130f5766911b6ca2d9c42c1156376a6c13f79f0";
@@ -13,7 +15,7 @@ pub const MOD_SHIFT: u32 = 0x0004;
 pub const MOD_WIN: u32 = 0x0008;
 pub const HOTKEY_MODIFIER_MASK: u32 = MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct HdrSnapshot {
     pub supported: bool,
     pub enabled: bool,
@@ -94,7 +96,7 @@ impl fmt::Display for AppError {
 
 impl std::error::Error for AppError {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Hotkey {
     pub modifiers: u32,
     pub vk: u32,
@@ -126,7 +128,7 @@ impl Hotkey {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Settings {
     pub hotkey: Hotkey,
     pub start_at_login: bool,

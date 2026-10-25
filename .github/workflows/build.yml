@@ -27,6 +27,15 @@ jobs:
           rustc -Vv
           cargo -V
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rtx-hdr-switch
+
+      - name: Update dependency lock for new UI crates
+        shell: pwsh
+        run: cargo generate-lockfile
+
       - name: Format
         shell: pwsh
         run: |
@@ -34,28 +43,40 @@ jobs:
 
       - name: Clippy
         shell: pwsh
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Test
         shell: pwsh
-        run: cargo test --locked
+        run: cargo test --locked --workspace
 
-      - name: Release build
+      - name: Host release build
         shell: pwsh
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin RtxHdrSwitch
+
+      - name: GPUI console release build
+        shell: pwsh
+        run: cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc --bin RtxHdrSettings
 
       - name: Package
         shell: pwsh
         run: |
           $dist = Join-Path $PWD "dist"
           New-Item -ItemType Directory -Force $dist | Out-Null
-          $exe = "target/x86_64-pc-windows-msvc/release/RtxHdrSwitch.exe"
-          if (-not (Test-Path $exe)) { throw "missing $exe" }
-          Copy-Item $exe $dist
+          $hostExe = "target/x86_64-pc-windows-msvc/release/RtxHdrSwitch.exe"
+          $consoleExe = "target/x86_64-pc-windows-msvc/ui-release/RtxHdrSettings.exe"
+          if (-not (Test-Path $hostExe)) { throw "missing $hostExe" }
+          if (-not (Test-Path $consoleExe)) { throw "missing $consoleExe" }
+          Copy-Item $hostExe $dist
+          Copy-Item $consoleExe $dist
           Copy-Item README.md $dist
           Copy-Item THIRD_PARTY_NOTICES.md $dist
-          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
-          "$hash  RtxHdrSwitch.exe" | Set-Content "$dist/RtxHdrSwitch.exe.sha256" -Encoding ascii
+          $hostHash = (Get-FileHash $hostExe -Algorithm SHA256).Hash
+          $consoleHash = (Get-FileHash $consoleExe -Algorithm SHA256).Hash
+          "$hostHash  RtxHdrSwitch.exe" | Set-Content "$dist/RtxHdrSwitch.exe.sha256" -Encoding ascii
+          "$consoleHash  RtxHdrSettings.exe" | Set-Content "$dist/RtxHdrSettings.exe.sha256" -Encoding ascii
+          $hostSize = (Get-Item $hostExe).Length
+          $consoleSize = (Get-Item $consoleExe).Length
+          "host_bytes=$hostSize`nconsole_bytes=$consoleSize" | Set-Content "$dist/build-sizes.txt" -Encoding ascii
           Compress-Archive -Path "$dist/*" -DestinationPath "RtxHdrSwitch-win-x64.zip" -Force
 
       - name: Upload executable
@@ -77,6 +98,7 @@ jobs:
             rust-toolchain.toml
             .cargo
             src
+            crates
             assets
             resources.rc
           if-no-files-found: warn

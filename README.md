@@ -5,14 +5,15 @@
 ## 功能
 
 - 默认快捷键：`Ctrl+Alt+H`
-- 托盘左键打开设置，右键显示菜单
-- 设置页可直接开启或关闭 RTX HDR
+- 托盘左键打开 GPUI 控制台，右键显示原生菜单
+- 控制台可直接开启或关闭 RTX HDR，并显示实时峰值亮度与处理状态
 - 可录制新的快捷键
-- 可选开机启动和切换通知
+- 可选开机启动和切换浮层
 - 切换成功后，在当前屏幕下方居中显示约 300 ms 的半透明开启/关闭提示
 - 切换前读取真实驱动状态，写入后回读验证
 - 写入异常时自动恢复原始 HDR 设置
-- 无管理员权限、无网络访问、无 WebView
+- 常驻宿主不链接 GPUI；关闭控制台后前端进程立即退出
+- 无管理员权限、无网络访问、生产界面无 WebView
 
 ## 限制
 
@@ -35,11 +36,16 @@ App 自带的未公开 `nvcpl.dll` 接口，并严格锁定到以下文件：
 ## 使用
 
 1. 从 GitHub Actions 下载 `RtxHdrSwitch-win-x64.zip`。
-2. 解压并运行 `RtxHdrSwitch.exe`。
+2. 解压完整发布包，运行 `RtxHdrSwitch.exe`；控制台需要同目录的
+   `RtxHdrSettings.exe`。
 3. 使用 `Ctrl+Alt+H` 切换 RTX Video HDR。
 
-手动启动会打开设置窗口；关闭设置窗口不会退出程序。程序必须继续驻留在通知区域，
-快捷键才会工作。`--background` 仅用于开机启动，启动时不显示设置窗口。
+手动启动会打开按需运行的 GPUI 控制台；关闭控制台不会退出后台程序，但会释放
+GPUI 渲染资源。程序必须继续驻留在通知区域，快捷键才会工作。`--background`
+仅用于开机启动，启动时不显示控制台。
+
+开发排查时可使用 `RtxHdrSwitch.exe --legacy-settings` 打开旧版 Win32 设置窗口；
+正常发布流程使用 GPUI 控制台。
 
 程序只写入以下当前用户注册表位置：
 
@@ -53,9 +59,11 @@ App 自带的未公开 `nvcpl.dll` 接口，并严格锁定到以下文件：
 ```text
 cargo generate-lockfile
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo build --locked --release --target x86_64-pc-windows-msvc
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+cargo build --locked --release --target x86_64-pc-windows-msvc --bin RtxHdrSwitch
+cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc --bin RtxHdrSettings
 ```
 
+交互式视觉原型位于 [`prototype/gpui-console.html`](prototype/gpui-console.html)，
 项目文档位于 [`docs/`](docs/)。

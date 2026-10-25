@@ -1,5 +1,11 @@
 #![windows_subsystem = "windows"]
 
+mod host_ipc;
+
+use host_ipc::IpcEvent;
+use rtx_hdr_switch::ipc::{
+    DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot,
+};
 use rtx_hdr_switch::{
     format_hotkey, is_verified_nvcpl, parse_hdr_info, toggle_with_transport, AppError, HdrSnapshot,
     Hotkey, NvTransport, Settings, ToggleOutcome, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT,
@@ -11,6 +17,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write as _;
 use std::mem::{size_of, zeroed};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::ptr::{null, null_mut};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
@@ -57,6 +64,7 @@ const TASKBAR_CREATED_MESSAGE: &str = "TaskbarCreated";
 const SETTINGS_KEY: &str = r"Software\RTXHDRSwitch";
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "RtxHdrSwitch";
+const SETTINGS_EXECUTABLE: &str = "RtxHdrSettings.exe";
 
 const WM_APP_TRAY: u32 = wm::WM_APP + 1;
 const WM_APP_WORKER: u32 = wm::WM_APP + 2;
@@ -143,6 +151,7 @@ struct AppState {
     hdr: HdrUi,
     busy: bool,
     hotkey_registered: bool,
+    capture_active: bool,
     last_toggle: Option<Instant>,
     settings_window: usize,
     worker_tx: Option<Sender<WorkerCommand>>,
@@ -151,6 +160,8 @@ struct AppState {
     last_error: Option<String>,
     taskbar_created_message: u32,
     open_settings_message: u32,
+    pending_page: UiPage,
+    legacy_settings: bool,
 }
 
 struct OverlayState {
@@ -383,6 +394,8 @@ fn main() {
 unsafe fn run() -> i32 {
     let background =
         std::env::args_os().any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--background"));
+    let legacy_settings = std::env::args_os()
+        .any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("--legacy-settings"));
     let instance = GetModuleHandleW(null());
     let taskbar_created_message =
         wm::RegisterWindowMessageW(wide(TASKBAR_CREATED_MESSAGE).as_ptr());
@@ -474,6 +487,7 @@ unsafe fn run() -> i32 {
         hdr: HdrUi::Loading,
         busy: false,
         hotkey_registered: false,
+        capture_active: false,
         last_toggle: None,
         settings_window: 0,
         worker_tx: None,
@@ -482,6 +496,8 @@ unsafe fn run() -> i32 {
         last_error: None,
         taskbar_created_message,
         open_settings_message,
+        pending_page: UiPage::Console,
+        legacy_settings,
     }));
 
     let title = wide(APP_NAME);
@@ -504,6 +520,7 @@ unsafe fn run() -> i32 {
         CloseHandle(mutex);
         return 1;
     }
+    host_ipc::start(hwnd as usize, host_ipc::WM_APP_IPC);
 
     let mut startup_warning = None;
     if first_run {
@@ -796,6 +813,10 @@ unsafe extern "system" fn wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if message == host_ipc::WM_APP_IPC {
+        handle_ipc_events(hwnd);
+        return 0;
+    }
     if message == WM_APP_WORKER {
         handle_worker_events(hwnd);
         return 0;
@@ -894,6 +915,7 @@ unsafe fn cleanup(hwnd: HWND) {
 
     wm::KillTimer(hwnd, REFRESH_TIMER_ID);
     let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+    host_ipc::shutdown();
     if let Some(worker) = worker {
         let _ = worker.send(WorkerCommand::Shutdown);
     }
@@ -920,6 +942,146 @@ unsafe fn cleanup(hwnd: HWND) {
         data.uID = TRAY_ICON_ID;
         let _ = Shell_NotifyIconW(NIM_DELETE, &data);
     }
+}
+
+fn ui_snapshot() -> Option<UiSnapshot> {
+    let state = APP_STATE.get()?;
+    let state = state.lock().unwrap_or_else(|poison| poison.into_inner());
+    let hdr = match &state.hdr {
+        HdrUi::Loading => UiHdrState::Loading,
+        HdrUi::Ready(snapshot) => UiHdrState::Ready(snapshot.clone()),
+        HdrUi::Error(error) => UiHdrState::Error(error.clone()),
+    };
+    Some(UiSnapshot {
+        protocol_version: rtx_hdr_switch::ipc::PROTOCOL_VERSION,
+        app_version: env!("CARGO_PKG_VERSION").into(),
+        hdr,
+        settings: state.settings.clone(),
+        hotkey_registered: state.hotkey_registered,
+        busy: state.busy,
+        diagnostics: DiagnosticsInfo {
+            nvcpl_path: nvcpl_path().map(|path| path.display().to_string()),
+            expected_sha256: NVCPL_SHA256_HEX.into(),
+            last_error: state.last_error.clone(),
+        },
+    })
+}
+
+fn send_ui_event(event: HostEvent) -> bool {
+    host_ipc::send(&event)
+}
+
+fn send_ui_snapshot() {
+    if let Some(snapshot) = ui_snapshot() {
+        let _ = send_ui_event(HostEvent::Snapshot(snapshot));
+    }
+}
+
+fn send_ui_error(error: AppError) {
+    let _ = send_ui_event(HostEvent::Error(UiError {
+        message: error.user_message(),
+        critical: matches!(error, AppError::RollbackFailed),
+    }));
+}
+
+unsafe fn handle_ipc_events(hwnd: HWND) {
+    for event in host_ipc::take_events() {
+        match event {
+            IpcEvent::Connected => {
+                let page = if let Some(state) = APP_STATE.get() {
+                    let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
+                    let page = state.pending_page;
+                    state.pending_page = UiPage::Console;
+                    page
+                } else {
+                    UiPage::Console
+                };
+                send_ui_snapshot();
+                let _ = send_ui_event(HostEvent::ActivatePage { page });
+                request_read(hwnd);
+            }
+            IpcEvent::Disconnected => {
+                end_hotkey_capture(hwnd, true);
+            }
+            IpcEvent::Command(command) => match command {
+                UiCommand::ToggleHdr => request_toggle(hwnd, false),
+                UiCommand::ApplySettings { settings } => {
+                    match apply_settings(hwnd, settings) {
+                        Ok(()) => {}
+                        Err(error) => {
+                            refresh_settings_toggle_button();
+                            send_ui_error(error);
+                            send_ui_snapshot();
+                        }
+                    }
+                }
+                UiCommand::BeginHotkeyCapture => begin_hotkey_capture(hwnd),
+                UiCommand::EndHotkeyCapture => end_hotkey_capture(hwnd, false),
+                UiCommand::Refresh => {
+                    request_read(hwnd);
+                    send_ui_snapshot();
+                }
+                UiCommand::ActivatePage { page } => open_console_page(hwnd, page),
+                UiCommand::Activate => open_settings(hwnd),
+                UiCommand::Hello { .. } => {}
+            },
+        }
+    }
+}
+
+unsafe fn begin_hotkey_capture(hwnd: HWND) {
+    let already_active = APP_STATE
+        .get()
+        .map(|state| {
+            state
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .capture_active
+        })
+        .unwrap_or(false);
+    if already_active {
+        return;
+    }
+    let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
+    if let Some(state) = APP_STATE.get() {
+        let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        state.capture_active = true;
+        state.hotkey_registered = false;
+    }
+    let _ = send_ui_event(HostEvent::HotkeyCaptureChanged { active: true });
+    send_ui_snapshot();
+}
+
+unsafe fn end_hotkey_capture(hwnd: HWND, disconnected: bool) {
+    let (active, hotkey) = if let Some(state) = APP_STATE.get() {
+        let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        if !state.capture_active {
+            return;
+        }
+        state.capture_active = false;
+        (true, state.settings.hotkey)
+    } else {
+        (false, Hotkey::default())
+    };
+    if !active {
+        return;
+    }
+
+    let result = register_configured_hotkey(hwnd, hotkey);
+    if let Some(state) = APP_STATE.get() {
+        let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        state.hotkey_registered = result.is_ok();
+        if let Err(error) = &result {
+            state.last_error = Some(error.user_message());
+        }
+    }
+    if !disconnected {
+        let _ = send_ui_event(HostEvent::HotkeyCaptureChanged { active: false });
+        if let Err(error) = result {
+            send_ui_error(error);
+        }
+    }
+    send_ui_snapshot();
 }
 
 unsafe fn request_read(hwnd: HWND) {
@@ -973,6 +1135,7 @@ unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
             log_line("failed to send toggle command to NVIDIA worker");
         }
         add_or_update_tray(hwnd, false);
+        send_ui_snapshot();
     }
 }
 
@@ -1083,6 +1246,9 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                     show_message(hwnd, "RTX 视频 HDR", wm::MB_OK | wm::MB_ICONERROR);
                 }
                 refresh_settings_toggle_button();
+                if let Some(snapshot) = ui_snapshot() {
+                    let _ = send_ui_event(HostEvent::HdrChanged(snapshot));
+                }
             }
             WorkerEvent::Toggle(result) => {
                 let (notification, critical, overlay) = if let Some(state) = APP_STATE.get() {
@@ -1145,6 +1311,9 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                     );
                 }
                 refresh_settings_toggle_button();
+                if let Some(snapshot) = ui_snapshot() {
+                    let _ = send_ui_event(HostEvent::HdrChanged(snapshot));
+                }
             }
         }
     }
@@ -1255,7 +1424,7 @@ unsafe fn show_tray_menu(hwnd: HWND) {
         CMD_TOGGLE as usize,
         toggle.as_ptr(),
     );
-    let settings = wide("设置...");
+    let settings = wide("打开控制台...");
     wm::AppendMenuW(
         menu,
         wm::MF_STRING,
@@ -1335,7 +1504,7 @@ unsafe fn handle_main_command(hwnd: HWND, command: u32) {
                 show_message(hwnd, &error.user_message(), wm::MB_OK | wm::MB_ICONERROR);
             }
         }
-        CMD_DIAGNOSTICS => show_diagnostics(hwnd),
+        CMD_DIAGNOSTICS => open_console_page(hwnd, UiPage::Diagnostics),
         CMD_EXIT => {
             wm::DestroyWindow(hwnd);
         }
@@ -1375,14 +1544,22 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
 
     if let Err(error) = set_autostart(candidate.start_at_login) {
         if changed {
-            let _ = register_configured_hotkey(owner, previous.hotkey);
+            let restored = register_configured_hotkey(owner, previous.hotkey).is_ok();
+            if let Some(state) = APP_STATE.get() {
+                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+                state.hotkey_registered = restored;
+            }
         }
         return Err(error);
     }
     if let Err(error) = save_settings(&candidate) {
         let _ = set_autostart(previous.start_at_login);
         if changed {
-            let _ = register_configured_hotkey(owner, previous.hotkey);
+            let restored = register_configured_hotkey(owner, previous.hotkey).is_ok();
+            if let Some(state) = APP_STATE.get() {
+                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+                state.hotkey_registered = restored;
+            }
         }
         return Err(error);
     }
@@ -1391,8 +1568,12 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
         let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
         state.settings = candidate;
         state.hotkey_registered = true;
+        state.capture_active = false;
     }
     add_or_update_tray(owner, false);
+    if let Some(snapshot) = ui_snapshot() {
+        let _ = send_ui_event(HostEvent::SettingsApplied(snapshot));
+    }
     Ok(())
 }
 
@@ -1410,6 +1591,64 @@ unsafe fn register_configured_hotkey(hwnd: HWND, hotkey: Hotkey) -> Result<(), A
 }
 
 unsafe fn open_settings(owner: HWND) {
+    let legacy = APP_STATE
+        .get()
+        .map(|state| {
+            state
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .legacy_settings
+        })
+        .unwrap_or(false);
+    if legacy {
+        open_native_settings(owner);
+    } else {
+        open_console_page(owner, UiPage::Console);
+    }
+}
+
+unsafe fn open_console_page(owner: HWND, page: UiPage) {
+    if host_ipc::has_client() {
+        let _ = send_ui_event(HostEvent::ActivatePage { page });
+        let _ = send_ui_event(HostEvent::Activate);
+        return;
+    }
+
+    if let Some(state) = APP_STATE.get() {
+        let mut state = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        state.pending_page = page;
+    }
+    let helper = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join(SETTINGS_EXECUTABLE)));
+    let Some(helper) = helper else {
+        show_message(
+            owner,
+            "无法确定控制台程序路径。",
+            wm::MB_OK | wm::MB_ICONERROR,
+        );
+        return;
+    };
+    if !helper.is_file() {
+        show_message(
+            owner,
+            &format!(
+                "未找到 {SETTINGS_EXECUTABLE}。\n\n请将发布包中的两个 EXE 解压到同一目录。"
+            ),
+            wm::MB_OK | wm::MB_ICONERROR,
+        );
+        return;
+    }
+    if let Err(error) = Command::new(&helper).spawn() {
+        show_message(
+            owner,
+            &format!("无法启动 RTX HDR 控制台：{error}"),
+            wm::MB_OK | wm::MB_ICONERROR,
+        );
+    }
+}
+
+unsafe fn open_native_settings(owner: HWND) {
     let existing = APP_STATE
         .get()
         .map(|state| {
@@ -1888,58 +2127,6 @@ fn current_modifiers() -> u32 {
         modifiers |= MOD_WIN;
     }
     modifiers
-}
-
-unsafe fn show_diagnostics(hwnd: HWND) {
-    let text = if let Some(state) = APP_STATE.get() {
-        let state = state.lock().unwrap_or_else(|p| p.into_inner());
-        let hdr = match &state.hdr {
-            HdrUi::Loading => "正在读取".to_string(),
-            HdrUi::Error(error) => format!("不可用：{error}"),
-            HdrUi::Ready(snapshot) => {
-                let toggle = if snapshot.enabled { "开" } else { "关" };
-                let active = if snapshot.active { "是" } else { "否" };
-                format!(
-                    "{toggle}\n当前处理中：{active}\n错误码：{}\n峰值：{}（范围 {}–{}）\n中间灰：{}\n对比度：{}\n饱和度：{}",
-                    snapshot.error_code,
-                    snapshot.peak_brightness,
-                    snapshot.peak_min,
-                    snapshot.peak_max,
-                    snapshot.middle_gray,
-                    snapshot.contrast,
-                    snapshot.saturation
-                )
-            }
-        };
-        format!(
-            "版本：{}\nRTX 视频 HDR：{hdr}\n快捷键：{}（{}）\n开机启动：{}\n通知：{}\n\nNvCpl：{}\n允许的 SHA-256：{}\n\n最近错误：{}",
-            env!("CARGO_PKG_VERSION"),
-            format_hotkey(state.settings.hotkey),
-            if state.hotkey_registered {
-                "已注册"
-            } else {
-                "未注册"
-            },
-            yes_no(state.settings.start_at_login),
-            yes_no(state.settings.notifications),
-            nvcpl_path()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "未找到".into()),
-            NVCPL_SHA256_HEX,
-            state.last_error.as_deref().unwrap_or("无")
-        )
-    } else {
-        "应用状态尚未初始化。".into()
-    };
-    show_message(hwnd, &text, wm::MB_OK | wm::MB_ICONINFORMATION);
-}
-
-fn yes_no(value: bool) -> &'static str {
-    if value {
-        "是"
-    } else {
-        "否"
-    }
 }
 
 fn nvcpl_path() -> Option<PathBuf> {

@@ -1,7 +1,13 @@
 # Constraints
 
-- Use Rust and a pure Win32 UI. Do not add Tauri, WebView, `tray-icon`, or
-  `global-hotkey`.
+- Use Rust. The resident host UI surface remains pure Win32; the on-demand console
+  uses GPUI Kit. Do not add Tauri, WebView, `tray-icon`, or `global-hotkey`.
+- The host must not link GPUI, own a renderer, or keep the console process alive
+  after its only window closes.
+- Tray icon, native menu, global shortcut registration, and the 300 ms overlay stay
+  in the Win32 host. GPUI has no supported tray API.
+- The GPUI console must not load NvCpl, write NVIDIA settings, or persist settings
+  directly. All actions go through the versioned local IPC channel to the host.
 - Do not install Rust or MSVC on this machine. Builds and automated tests run on
   GitHub Actions `windows-latest`; only the Actions result counts as verified.
 - The process runs as the current user and must not require elevation.
@@ -18,3 +24,5 @@
 - Settings and startup entries may only be written under `HKCU`.
 - RTX Video HDR, Windows HDR, and VSR are distinct settings and must not be
   treated interchangeably.
+- GPUI must be pinned to `gpui-kit = "=0.8.0"` and its pinned GPUI snapshot; do not
+  mix in official `gpui 0.2.2` or experimental `gpui-fast`.
