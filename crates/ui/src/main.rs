@@ -932,13 +932,11 @@ impl ConsoleApp {
                 h_flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .w(px(7.))
-                            .h(px(7.))
-                            .rounded_full()
-                            .bg(if enabled { rgb(SIGNAL) } else { rgb(MUTED) }),
-                    )
+                    .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(if enabled {
+                        rgb(SIGNAL)
+                    } else {
+                        rgb(MUTED)
+                    }))
                     .child(
                         div()
                             .text_size(px(11.))
@@ -1044,16 +1042,13 @@ impl ConsoleApp {
                                     .text_color(rgb(MUTED))
                                     .child(format_hotkey(self.draft.hotkey)),
                             )
-                            .child(
-                                div()
-                                    .text_size(px(9.))
-                                    .text_color(rgb(SUBTLE))
-                                    .child(if read_only {
-                                        "只读兼容"
-                                    } else {
-                                        "点击开关立即生效"
-                                    }),
-                            ),
+                            .child(div().text_size(px(9.)).text_color(rgb(SUBTLE)).child(
+                                if read_only {
+                                    "只读兼容"
+                                } else {
+                                    "点击开关立即生效"
+                                },
+                            )),
                     ),
             )
     }
@@ -1084,13 +1079,11 @@ impl ConsoleApp {
                 h_flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .w(px(7.))
-                            .h(px(7.))
-                            .rounded_full()
-                            .bg(if enabled { rgb(WARM) } else { rgb(MUTED) }),
-                    )
+                    .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(if enabled {
+                        rgb(WARM)
+                    } else {
+                        rgb(MUTED)
+                    }))
                     .child(
                         div()
                             .text_size(px(11.))
@@ -1198,16 +1191,13 @@ impl ConsoleApp {
                                     .text_color(rgb(MUTED))
                                     .child(format_hotkey(self.draft.vsr_hotkey)),
                             )
-                            .child(
-                                div()
-                                    .text_size(px(9.))
-                                    .text_color(rgb(SUBTLE))
-                                    .child(if read_only {
-                                        "只读兼容".to_string()
-                                    } else {
-                                        format!("当前生效：{active_quality}")
-                                    }),
-                            ),
+                            .child(div().text_size(px(9.)).text_color(rgb(SUBTLE)).child(
+                                if read_only {
+                                    "只读兼容".to_string()
+                                } else {
+                                    format!("当前生效：{active_quality}")
+                                },
+                            )),
                     ),
             )
     }
@@ -2527,19 +2517,15 @@ fn vsr_ladder() -> impl IntoElement {
         .w_full()
         .h(px(12.))
         .gap_1()
-        .children(
-            [0.16, 0.24, 0.34, 0.46, 0.74]
-                .into_iter()
-                .map(|opacity| {
-                    div()
-                        .flex_1()
-                        .h_full()
-                        .rounded(px(4.))
-                        .border_1()
-                        .border_color(rgb(0x685A42))
-                        .bg(rgb(WARM).opacity(opacity))
-                }),
-        )
+        .children([0.16, 0.24, 0.34, 0.46, 0.74].into_iter().map(|opacity| {
+            div()
+                .flex_1()
+                .h_full()
+                .rounded(px(4.))
+                .border_1()
+                .border_color(rgb(0x685A42))
+                .bg(rgb(WARM).opacity(opacity))
+        }))
 }
 
 fn summary_cell(label: &'static str, value: String) -> impl IntoElement {
