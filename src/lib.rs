@@ -37,9 +37,7 @@ pub struct HdrSnapshot {
     pub saturation: i32,
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum VsrQuality {
     Off,
     Level1,
@@ -629,13 +627,7 @@ pub fn set_vsr_quality_with_transport<T: VsrTransport>(
     if parse_vsr_value(&original_value)? != before.quality {
         return Err(AppError::InvalidData("VSR 设置值与状态不一致"));
     }
-    set_vsr_quality_after_read(
-        transport,
-        before,
-        original_value,
-        original_info,
-        desired,
-    )
+    set_vsr_quality_after_read(transport, before, original_value, original_info, desired)
 }
 
 pub fn toggle_vsr_with_transport<T: VsrTransport>(
@@ -654,13 +646,7 @@ pub fn toggle_vsr_with_transport<T: VsrTransport>(
     } else {
         remembered.remembered()
     };
-    set_vsr_quality_after_read(
-        transport,
-        before,
-        original_value,
-        original_info,
-        desired,
-    )
+    set_vsr_quality_after_read(transport, before, original_value, original_info, desired)
 }
 
 fn set_vsr_quality_after_read<T: VsrTransport>(
@@ -1147,14 +1133,10 @@ mod tests {
                 Ok(encode_vsr_value(VsrQuality::Level3)),
             ],
         );
-        let outcome =
-            set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3).unwrap();
+        let outcome = set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3).unwrap();
         assert_eq!(outcome.before.quality, VsrQuality::Level4);
         assert_eq!(outcome.after.quality, VsrQuality::Level3);
-        assert_eq!(
-            transport.writes,
-            vec![encode_vsr_value(VsrQuality::Level3)]
-        );
+        assert_eq!(transport.writes, vec![encode_vsr_value(VsrQuality::Level3)]);
     }
 
     #[test]
@@ -1194,8 +1176,7 @@ mod tests {
                 Ok(encode_vsr_value(VsrQuality::Level3)),
             ],
         );
-        let outcome =
-            toggle_vsr_with_transport(&mut transport, VsrQuality::Level3).unwrap();
+        let outcome = toggle_vsr_with_transport(&mut transport, VsrQuality::Level3).unwrap();
         assert!(!outcome.before.enabled);
         assert!(outcome.after.enabled);
         assert_eq!(outcome.after.quality, VsrQuality::Level3);
@@ -1225,11 +1206,7 @@ mod tests {
         let level4 = encode_vsr_value(VsrQuality::Level4);
         let mut transport = FakeVsrTransport::new(
             vec![Ok(original_info), Ok(wrong_info), Ok(restored_info)],
-            vec![
-                Ok(level4),
-                Ok(level4),
-                Ok(level4),
-            ],
+            vec![Ok(level4), Ok(level4), Ok(level4)],
         );
         assert_eq!(
             set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3),

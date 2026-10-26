@@ -1468,9 +1468,7 @@ unsafe fn request_vsr_toggle(hwnd: HWND, from_hotkey: bool) {
 
 unsafe fn request_vsr_quality(hwnd: HWND, quality: VsrQuality) {
     if !quality.is_enabled() {
-        send_ui_error(AppError::Settings(
-            "请选择 Auto 或 1–4 质量档位。".into(),
-        ));
+        send_ui_error(AppError::Settings("请选择 Auto 或 1–4 质量档位。".into()));
         return;
     }
 
@@ -1518,19 +1516,13 @@ unsafe fn request_vsr_quality(hwnd: HWND, quality: VsrQuality) {
         show_balloon(
             hwnd,
             "RTX Video Manager",
-            &format!(
-                "VSR 下次启用质量：{}",
-                vsr_quality_short(quality)
-            ),
+            &format!("VSR 下次启用质量：{}", vsr_quality_short(quality)),
             false,
         );
         return;
     }
     if let Some(sender) = sender {
-        if sender
-            .send(WorkerCommand::SetVsrQuality(quality))
-            .is_err()
-        {
+        if sender.send(WorkerCommand::SetVsrQuality(quality)).is_err() {
             if let Some(state) = APP_STATE.get() {
                 let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                 state.busy = false;
@@ -1613,8 +1605,7 @@ fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
                         }
                     }
                 }
-                let result =
-                    toggle_vsr_with_transport(backend.as_mut().unwrap(), remembered);
+                let result = toggle_vsr_with_transport(backend.as_mut().unwrap(), remembered);
                 if result.is_err() {
                     log_line(&format!("NVIDIA VSR toggle failed: {result:?}"));
                 }
@@ -1633,8 +1624,7 @@ fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
                         }
                     }
                 }
-                let result =
-                    set_vsr_quality_with_transport(backend.as_mut().unwrap(), quality);
+                let result = set_vsr_quality_with_transport(backend.as_mut().unwrap(), quality);
                 if result.is_err() {
                     log_line(&format!("NVIDIA VSR quality change failed: {result:?}"));
                 }
@@ -1706,10 +1696,8 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                             state.vsr = VsrUi::Ready(outcome.vsr);
                             state.compatibility = Some(outcome.compatibility);
                             state.last_hdr_raw = Some(hex_lower(&outcome.hdr_raw));
-                            state.last_vsr_raw_info =
-                                Some(hex_lower(&outcome.vsr_info_raw));
-                            state.last_vsr_raw_value =
-                                Some(hex_lower(&outcome.vsr_value_raw));
+                            state.last_vsr_raw_info = Some(hex_lower(&outcome.vsr_info_raw));
+                            state.last_vsr_raw_value = Some(hex_lower(&outcome.vsr_value_raw));
                             if let Some(quality) = remembered_quality {
                                 if state.settings.last_vsr_quality != quality {
                                     state.settings.last_vsr_quality = quality;
@@ -1835,10 +1823,8 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                             let enabled = outcome.after.enabled;
                             let quality = outcome.after.quality;
                             state.vsr = VsrUi::Ready(outcome.after);
-                            state.last_vsr_raw_info =
-                                Some(hex_lower(&outcome.raw_info));
-                            state.last_vsr_raw_value =
-                                Some(hex_lower(&outcome.raw_value));
+                            state.last_vsr_raw_info = Some(hex_lower(&outcome.raw_info));
+                            state.last_vsr_raw_value = Some(hex_lower(&outcome.raw_value));
                             state.last_error = None;
                             if enabled && state.settings.last_vsr_quality != quality {
                                 state.settings.last_vsr_quality = quality;
@@ -1849,10 +1835,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                                 }
                             }
                             let text = if enabled {
-                                format!(
-                                    "RTX VSR 已开启 · 质量 {}",
-                                    vsr_quality_short(quality)
-                                )
+                                format!("RTX VSR 已开启 · 质量 {}", vsr_quality_short(quality))
                             } else {
                                 "RTX VSR 已关闭".to_string()
                             };
@@ -2079,10 +2062,8 @@ unsafe fn show_tray_menu(hwnd: HWND) {
             } else {
                 status
             };
-            let hdr_supported =
-                matches!(&state.hdr, HdrUi::Ready(snapshot) if snapshot.supported);
-            let vsr_supported =
-                matches!(&state.vsr, VsrUi::Ready(snapshot) if snapshot.supported);
+            let hdr_supported = matches!(&state.hdr, HdrUi::Ready(snapshot) if snapshot.supported);
+            let vsr_supported = matches!(&state.vsr, VsrUi::Ready(snapshot) if snapshot.supported);
             (
                 status,
                 !state.busy && !read_only && hdr_supported,
@@ -2104,24 +2085,14 @@ unsafe fn show_tray_menu(hwnd: HWND) {
     let toggle = wide("切换 RTX 视频 HDR");
     wm::AppendMenuW(
         menu,
-        wm::MF_STRING
-            | if hdr_toggle_enabled {
-                0
-            } else {
-                wm::MF_GRAYED
-            },
+        wm::MF_STRING | if hdr_toggle_enabled { 0 } else { wm::MF_GRAYED },
         CMD_TOGGLE_HDR as usize,
         toggle.as_ptr(),
     );
     let vsr_toggle = wide("切换 RTX 视频超分辨率");
     wm::AppendMenuW(
         menu,
-        wm::MF_STRING
-            | if vsr_toggle_enabled {
-                0
-            } else {
-                wm::MF_GRAYED
-            },
+        wm::MF_STRING | if vsr_toggle_enabled { 0 } else { wm::MF_GRAYED },
         CMD_TOGGLE_VSR as usize,
         vsr_toggle.as_ptr(),
     );
@@ -2300,12 +2271,8 @@ unsafe fn register_configured_hotkeys(hwnd: HWND, settings: &Settings) -> Result
         let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
         return Err(error);
     }
-    if let Err(error) = register_hotkey(
-        hwnd,
-        VSR_HOTKEY_ID,
-        settings.vsr_hotkey,
-        "切换 RTX VSR",
-    ) {
+    if let Err(error) = register_hotkey(hwnd, VSR_HOTKEY_ID, settings.vsr_hotkey, "切换 RTX VSR")
+    {
         let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
         let _ = UnregisterHotKey(hwnd, VSR_HOTKEY_ID);
         let _ = UnregisterHotKey(hwnd, SHOW_HOTKEY_ID);
@@ -3170,11 +3137,7 @@ fn save_settings(settings: &Settings) -> Result<(), AppError> {
         let result = (|| {
             set_registry_dword(key, "HotkeyModifiers", settings.hotkey.modifiers)?;
             set_registry_dword(key, "HotkeyVirtualKey", settings.hotkey.vk)?;
-            set_registry_dword(
-                key,
-                "VsrHotkeyModifiers",
-                settings.vsr_hotkey.modifiers,
-            )?;
+            set_registry_dword(key, "VsrHotkeyModifiers", settings.vsr_hotkey.modifiers)?;
             set_registry_dword(key, "VsrHotkeyVirtualKey", settings.vsr_hotkey.vk)?;
             set_registry_dword(
                 key,

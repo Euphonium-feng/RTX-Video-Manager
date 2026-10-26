@@ -337,8 +337,7 @@ impl ConsoleApp {
 
     fn send(&mut self, command: UiCommand, cx: &mut Context<Self>) {
         let Some(client) = self.ipc.as_ref() else {
-            self.connection_error =
-                Some("后台未连接，请重新启动 RtxVideoManager.exe。".into());
+            self.connection_error = Some("后台未连接，请重新启动 RtxVideoManager.exe。".into());
             cx.notify();
             return;
         };
@@ -590,7 +589,9 @@ impl ConsoleApp {
     fn reset_defaults(&mut self, cx: &mut Context<Self>) {
         self.draft = Settings::default();
         self.vsr_choice = if self.vsr_ready().is_some_and(|vsr| vsr.enabled) {
-            self.vsr_ready().map(|vsr| vsr.quality).unwrap_or(VsrQuality::Auto)
+            self.vsr_ready()
+                .map(|vsr| vsr.quality)
+                .unwrap_or(VsrQuality::Auto)
         } else {
             VsrQuality::Auto
         };
@@ -758,15 +759,11 @@ impl ConsoleApp {
                 error_for_code(hdr.error_code).into(),
                 "● 不可用".into(),
             ),
-            Some(UiHdrState::Ready(_))
-                if self.busy_kind() == Some(UiBusyKind::HdrToggle) =>
-            {
-                (
+            Some(UiHdrState::Ready(_)) if self.busy_kind() == Some(UiBusyKind::HdrToggle) => (
                 "正在切换 RTX VIDEO HDR".into(),
                 "请稍候，正在写入并回读 NVIDIA 状态".into(),
                 "● 切换中".into(),
-                )
-            }
+            ),
             Some(UiHdrState::Ready(hdr)) if hdr.enabled => (
                 "RTX VIDEO HDR 已开启".into(),
                 if hdr.active {
@@ -786,7 +783,11 @@ impl ConsoleApp {
 
     fn vsr_status_text(&self) -> (String, String, String) {
         if let Some(error) = &self.connection_error {
-            return ("VSR 后台连接已断开".into(), error.clone(), "○ 已断线".into());
+            return (
+                "VSR 后台连接已断开".into(),
+                error.clone(),
+                "○ 已断线".into(),
+            );
         }
         match self.snapshot.as_ref().map(|snapshot| &snapshot.vsr) {
             None | Some(UiVsrState::Loading) => (
@@ -794,11 +795,9 @@ impl ConsoleApp {
                 "正在连接 NVIDIA 视频增强服务".into(),
                 "● 读取中".into(),
             ),
-            Some(UiVsrState::Error(error)) => (
-                "RTX VSR 不可用".into(),
-                error.clone(),
-                "● 不可用".into(),
-            ),
+            Some(UiVsrState::Error(error)) => {
+                ("RTX VSR 不可用".into(), error.clone(), "● 不可用".into())
+            }
             Some(UiVsrState::Ready(vsr)) if !vsr.supported => (
                 "RTX VSR 不支持".into(),
                 "当前 GPU 不支持 RTX 视频超分辨率".into(),
@@ -809,15 +808,11 @@ impl ConsoleApp {
                 "当前 NVIDIA 构建仅允许读取 VSR 状态".into(),
                 "● 只读".into(),
             ),
-            Some(UiVsrState::Ready(_))
-                if self.busy_kind() == Some(UiBusyKind::VsrToggle) =>
-            {
-                (
-                    "正在切换 RTX VSR".into(),
-                    "请稍候，正在写入并回读质量档位".into(),
-                    "● 切换中".into(),
-                )
-            }
+            Some(UiVsrState::Ready(_)) if self.busy_kind() == Some(UiBusyKind::VsrToggle) => (
+                "正在切换 RTX VSR".into(),
+                "请稍候，正在写入并回读质量档位".into(),
+                "● 切换中".into(),
+            ),
             Some(UiVsrState::Ready(vsr)) => {
                 let quality = quality_label(vsr.quality);
                 if vsr.enabled {
@@ -836,10 +831,7 @@ impl ConsoleApp {
                 } else {
                     (
                         "RTX VSR 已关闭".into(),
-                        format!(
-                            "下次启用使用 {} 档",
-                            quality_label(self.vsr_choice)
-                        ),
+                        format!("下次启用使用 {} 档", quality_label(self.vsr_choice)),
                         "○ 已关闭".into(),
                     )
                 }
@@ -1218,7 +1210,11 @@ impl ConsoleApp {
             .p_4()
             .rounded(px(14.))
             .border_1()
-            .border_color(if enabled { rgb(WARM).opacity(0.45) } else { rgb(RULE) })
+            .border_color(if enabled {
+                rgb(WARM).opacity(0.45)
+            } else {
+                rgb(RULE)
+            })
             .bg(rgb(PANEL))
             .child(
                 h_flex()
@@ -1257,42 +1253,40 @@ impl ConsoleApp {
                     }),
             )
             .child(
-                h_flex()
-                    .gap_2()
-                    .children(
-                        [
-                            VsrQuality::Auto,
-                            VsrQuality::Level1,
-                            VsrQuality::Level2,
-                            VsrQuality::Level3,
-                            VsrQuality::Level4,
-                        ]
-                        .into_iter()
-                        .map(|quality| {
-                            let selected = self.vsr_choice == quality;
-                            Button::new(vsr_quality_id(quality))
-                                .custom(
-                                    ButtonCustomVariant::new(cx)
-                                        .color(if selected {
-                                            rgb(WARM).into()
-                                        } else {
-                                            rgb(RAISED).into()
-                                        })
-                                        .foreground(if selected {
-                                            rgb(INK).into()
-                                        } else {
-                                            rgb(TEXT).into()
-                                        })
-                                        .hover(rgb(0x203138).into())
-                                        .active(rgb(0x17262B).into()),
-                                )
-                                .label(quality_label(quality))
-                                .disabled(!can_choose)
-                                .on_click(cx.listener(move |app, _, _, cx| {
-                                    app.choose_vsr_quality(quality, cx);
-                                }))
-                        }),
-                    ),
+                h_flex().gap_2().children(
+                    [
+                        VsrQuality::Auto,
+                        VsrQuality::Level1,
+                        VsrQuality::Level2,
+                        VsrQuality::Level3,
+                        VsrQuality::Level4,
+                    ]
+                    .into_iter()
+                    .map(|quality| {
+                        let selected = self.vsr_choice == quality;
+                        Button::new(vsr_quality_id(quality))
+                            .custom(
+                                ButtonCustomVariant::new(cx)
+                                    .color(if selected {
+                                        rgb(WARM).into()
+                                    } else {
+                                        rgb(RAISED).into()
+                                    })
+                                    .foreground(if selected {
+                                        rgb(INK).into()
+                                    } else {
+                                        rgb(TEXT).into()
+                                    })
+                                    .hover(rgb(0x203138).into())
+                                    .active(rgb(0x17262B).into()),
+                            )
+                            .label(quality_label(quality))
+                            .disabled(!can_choose)
+                            .on_click(cx.listener(move |app, _, _, cx| {
+                                app.choose_vsr_quality(quality, cx);
+                            }))
+                    }),
+                ),
             )
             .child(
                 h_flex()
@@ -1619,12 +1613,7 @@ impl ConsoleApp {
             .border_color(rgb(RULE))
             .bg(rgb(PANEL))
             .child(self.render_hotkey_row(HotkeyField::Hdr, "切换 HDR", self.draft.hotkey, cx))
-            .child(self.render_hotkey_row(
-                HotkeyField::Vsr,
-                "切换 VSR",
-                self.draft.vsr_hotkey,
-                cx,
-            ))
+            .child(self.render_hotkey_row(HotkeyField::Vsr, "切换 VSR", self.draft.vsr_hotkey, cx))
             .child(self.render_hotkey_row(
                 HotkeyField::Console,
                 "唤起控制台",
@@ -1800,8 +1789,7 @@ impl ConsoleApp {
                     ))
                     .child(diagnostic_item(
                         "VSR 活动档位",
-                        vsr
-                            .and_then(|value| value.active_quality)
+                        vsr.and_then(|value| value.active_quality)
                             .map(quality_label)
                             .unwrap_or("无"),
                         false,
@@ -2022,12 +2010,7 @@ impl Render for ConsoleApp {
                     .pb(px(14.))
                     .gap_3()
                     .child(self.render_tabs(cx))
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_h(px(0.))
-                            .child(content),
-                    )
+                    .child(v_flex().flex_1().min_h(px(0.)).child(content))
                     .child(self.render_footer(cx)),
             )
     }
