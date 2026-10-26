@@ -7,10 +7,11 @@ use rtx_hdr_switch::ipc::{
     DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot,
 };
 use rtx_hdr_switch::{
-    format_hotkey, is_verified_nvcpl, parse_hdr_info, toggle_with_transport, tune_with_transport,
-    AppError, HdrAdjustments, HdrSnapshot, Hotkey, NvTransport, Settings, ToggleOutcome,
-    TuningOutcome, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
-    NVCPL_RELATIVE_PATH, NVCPL_SHA256_HEX,
+    classify_compatibility, format_hotkey, hex_lower, parse_hdr_info, sha256_hex,
+    toggle_with_transport, tune_with_transport, AppError, CompatibilityInfo, CompatibilityMode,
+    HdrAdjustments, HdrSnapshot, Hotkey, NvTransport, Settings, ToggleOutcome, TuningOutcome,
+    HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH,
+    NVCPL_SHA256_HEX,
 };
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -43,6 +44,10 @@ use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 use windows_sys::Win32::System::Threading::CreateMutexW;
+use windows_sys::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    VS_FFI_SIGNATURE,
+};
 use windows_sys::Win32::UI::Controls::BST_CHECKED;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -151,6 +156,8 @@ impl Icons {
 struct AppState {
     settings: Settings,
     hdr: HdrUi,
+    compatibility: Option<CompatibilityInfo>,
+    last_hdr_raw: Option<String>,
     busy: bool,
     hotkey_registered: bool,
     capture_active: bool,
@@ -179,9 +186,15 @@ enum WorkerCommand {
 }
 
 enum WorkerEvent {
-    Read(Result<HdrSnapshot, AppError>),
+    Read(Result<ReadOutcome, AppError>),
     Toggle(Result<ToggleOutcome, AppError>),
     HdrTuning(Result<TuningOutcome, AppError>),
+}
+
+struct ReadOutcome {
+    snapshot: HdrSnapshot,
+    raw: [u8; HDR_INFO_SIZE],
+    compatibility: CompatibilityInfo,
 }
 
 type InitFn = unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32;
@@ -218,6 +231,7 @@ struct NvBackend {
     get_setting: GetSettingFn,
     set_setting: SetSettingFn,
     execute: ExecuteFn,
+    compatibility: CompatibilityInfo,
 }
 
 impl NvBackend {
@@ -225,9 +239,8 @@ impl NvBackend {
         let path = nvcpl_path().ok_or(AppError::NvidiaAppMissing)?;
         let bytes = fs::read(&path)
             .map_err(|error| AppError::Io(format!("无法读取 {}：{error}", path.display())))?;
-        if !is_verified_nvcpl(&bytes) {
-            return Err(AppError::UnsupportedVersion);
-        }
+        let actual_sha256 = sha256_hex(&bytes);
+        let hash_matches = actual_sha256 == NVCPL_SHA256_HEX;
         verify_nvidia_signature(&path)?;
 
         // The private NvCpl API talks to the UXD service through COM on this thread.
@@ -302,16 +315,33 @@ impl NvBackend {
             return Err(AppError::InitFailed(init_code));
         }
 
-        let backend = Self {
+        let dll_version = file_version(&path);
+        let mut backend = Self {
             module,
             _com: com,
             close,
             get_setting,
             set_setting,
             execute,
+            compatibility: CompatibilityInfo {
+                mode: CompatibilityMode::ReadOnlyUnknownBuild,
+                actual_sha256,
+                expected_sha256: NVCPL_SHA256_HEX.into(),
+                dll_version,
+                probe_passed: false,
+                reason: Some("HDR 读取探针尚未完成。".into()),
+            },
         };
         let raw = backend.read_hdr_bytes()?;
         parse_hdr_info(&raw)?;
+        let mode = classify_compatibility(hash_matches, true, true)?;
+        backend.compatibility.mode = mode;
+        backend.compatibility.probe_passed = true;
+        backend.compatibility.reason = if mode.is_writable() {
+            None
+        } else {
+            Some("nvcpl.dll 哈希未经验证，当前构建只允许读取。".into())
+        };
         Ok(backend)
     }
 
@@ -332,6 +362,9 @@ impl NvBackend {
     }
 
     unsafe fn write_hdr_bytes(&self, raw: &[u8; HDR_INFO_SIZE]) -> Result<(), AppError> {
+        if !self.compatibility.is_writable() {
+            return Err(AppError::ReadOnlyCompatibility);
+        }
         let context = 0u64;
         let code = (self.set_setting)(
             1,
@@ -351,10 +384,6 @@ impl NvBackend {
         Ok(())
     }
 
-    unsafe fn read_snapshot(&self) -> Result<HdrSnapshot, AppError> {
-        let raw = self.read_hdr_bytes()?;
-        parse_hdr_info(&raw)
-    }
 }
 
 impl Drop for NvBackend {
@@ -491,6 +520,8 @@ unsafe fn run() -> i32 {
     let _ = APP_STATE.set(Mutex::new(AppState {
         settings: settings.clone(),
         hdr: HdrUi::Loading,
+        compatibility: None,
+        last_hdr_raw: None,
         busy: false,
         hotkey_registered: false,
         capture_active: false,
@@ -972,6 +1003,8 @@ fn ui_snapshot() -> Option<UiSnapshot> {
         diagnostics: DiagnosticsInfo {
             nvcpl_path: nvcpl_path().map(|path| path.display().to_string()),
             expected_sha256: NVCPL_SHA256_HEX.into(),
+            compatibility: state.compatibility.clone(),
+            raw_hdr_hex: state.last_hdr_raw.clone(),
             last_error: state.last_error.clone(),
         },
     })
@@ -1115,8 +1148,17 @@ unsafe fn request_read(hwnd: HWND) {
 }
 
 unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
+    let mut read_only = false;
     let sender = if let Some(state) = APP_STATE.get() {
         let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+        if state
+            .compatibility
+            .as_ref()
+            .is_some_and(|compatibility| !compatibility.is_writable())
+        {
+            read_only = true;
+            None
+        } else {
         if from_hotkey && state.settings_window != 0 {
             return;
         }
@@ -1135,9 +1177,14 @@ unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
         state.busy = true;
         state.last_toggle = Some(Instant::now());
         state.worker_tx.clone()
+        }
     } else {
         None
     };
+    if read_only {
+        show_balloon(hwnd, "RTX 视频 HDR", AppError::ReadOnlyCompatibility.user_message().as_str(), true);
+        return;
+    }
     if let Some(sender) = sender {
         if sender.send(WorkerCommand::Toggle).is_err() {
             if let Some(state) = APP_STATE.get() {
@@ -1152,16 +1199,29 @@ unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
 }
 
 unsafe fn request_hdr_tuning(hwnd: HWND, adjustments: HdrAdjustments) {
+    let mut read_only = false;
     let sender = if let Some(state) = APP_STATE.get() {
         let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-        if state.busy || state.worker_tx.is_none() {
+        if state
+            .compatibility
+            .as_ref()
+            .is_some_and(|compatibility| !compatibility.is_writable())
+        {
+            read_only = true;
+            None
+        } else if state.busy || state.worker_tx.is_none() {
             return;
+        } else {
+            state.busy = true;
+            state.worker_tx.clone()
         }
-        state.busy = true;
-        state.worker_tx.clone()
     } else {
         None
     };
+    if read_only {
+        send_ui_error(AppError::ReadOnlyCompatibility);
+        return;
+    }
     if let Some(sender) = sender {
         if sender
             .send(WorkerCommand::ApplyHdrTuning(adjustments))
@@ -1194,7 +1254,16 @@ fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
                         }
                     }
                 }
-                let result = unsafe { backend.as_ref().unwrap().read_snapshot() };
+                let result = unsafe {
+                    let backend = backend.as_ref().unwrap();
+                    backend.read_hdr_bytes().and_then(|raw| {
+                        parse_hdr_info(&raw).map(|snapshot| ReadOutcome {
+                            snapshot,
+                            raw,
+                            compatibility: backend.compatibility.clone(),
+                        })
+                    })
+                };
                 if let Err(error) = &result {
                     log_line(&format!("NVIDIA state read failed: {error:?}"));
                 }
@@ -1273,8 +1342,10 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                 let (notification, critical) = if let Some(state) = APP_STATE.get() {
                     let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
                     match result {
-                        Ok(snapshot) => {
-                            state.hdr = HdrUi::Ready(snapshot);
+                        Ok(outcome) => {
+                            state.hdr = HdrUi::Ready(outcome.snapshot);
+                            state.compatibility = Some(outcome.compatibility);
+                            state.last_hdr_raw = Some(hex_lower(&outcome.raw));
                             state.last_error = None;
                             (None, false)
                         }
@@ -1337,7 +1408,9 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                         Err(error) => {
                             let text = error.user_message();
                             let critical = matches!(error, AppError::RollbackFailed);
-                            state.hdr = HdrUi::Error(text.clone());
+                            if !matches!(error, AppError::ReadOnlyCompatibility) {
+                                state.hdr = HdrUi::Error(text.clone());
+                            }
                             state.last_error = Some(text.clone());
                             (Some((text, true)), critical, None)
                         }
@@ -1484,9 +1557,19 @@ fn tray_tooltip(state: &AppState) -> String {
         HdrUi::Ready(_) => "关",
         HdrUi::Error(_) => "不可用",
     };
+    let compatibility = if state
+        .compatibility
+        .as_ref()
+        .is_some_and(|compatibility| !compatibility.is_writable())
+    {
+        " | 只读兼容"
+    } else {
+        ""
+    };
     format!(
-        "RTX 视频 HDR：{} | 切换 {} | 控制台 {}",
+        "RTX 视频 HDR：{}{} | 切换 {} | 控制台 {}",
         state_text,
+        compatibility,
         format_hotkey(state.settings.hotkey),
         format_hotkey(state.settings.show_console_hotkey)
     )
@@ -1495,6 +1578,10 @@ fn tray_tooltip(state: &AppState) -> String {
 unsafe fn show_tray_menu(hwnd: HWND) {
     let (status, toggle_enabled, startup, notifications) = if let Some(state) = APP_STATE.get() {
         let state = state.lock().unwrap_or_else(|p| p.into_inner());
+        let read_only = state
+            .compatibility
+            .as_ref()
+            .is_some_and(|compatibility| !compatibility.is_writable());
         let status = match &state.hdr {
             HdrUi::Loading => "状态：正在读取".to_string(),
             HdrUi::Ready(snapshot) if snapshot.enabled => "状态：开".to_string(),
@@ -1502,9 +1589,14 @@ unsafe fn show_tray_menu(hwnd: HWND) {
             HdrUi::Ready(_) => "状态：不支持".to_string(),
             HdrUi::Error(_) => "状态：不可用".to_string(),
         };
+        let status = if read_only {
+            format!("{status} · 只读兼容")
+        } else {
+            status
+        };
         (
             status,
-            !state.busy,
+            !state.busy && !read_only,
             state.settings.start_at_login,
             state.settings.notifications,
         )
@@ -1866,6 +1958,13 @@ fn settings_toggle_presentation() -> (&'static str, bool) {
         return ("正在读取...", false);
     };
     let state = shared.lock().unwrap_or_else(|p| p.into_inner());
+    if state
+        .compatibility
+        .as_ref()
+        .is_some_and(|compatibility| !compatibility.is_writable())
+    {
+        return ("只读兼容模式", false);
+    }
     if state.busy {
         return ("正在切换...", false);
     }
@@ -2266,6 +2365,48 @@ fn current_modifiers() -> u32 {
         modifiers |= MOD_WIN;
     }
     modifiers
+}
+
+unsafe fn file_version(path: &Path) -> Option<String> {
+    let path_wide = wide(&path.to_string_lossy());
+    let size = GetFileVersionInfoSizeW(path_wide.as_ptr(), null_mut());
+    if size == 0 {
+        return None;
+    }
+    let mut data = vec![0u32; (size as usize).div_ceil(size_of::<u32>())];
+    if GetFileVersionInfoW(
+        path_wide.as_ptr(),
+        0,
+        size,
+        data.as_mut_ptr().cast(),
+    ) == 0
+    {
+        return None;
+    }
+    let root = wide(r"\");
+    let mut value = null_mut();
+    let mut value_size = 0u32;
+    if VerQueryValueW(
+        data.as_ptr().cast(),
+        root.as_ptr(),
+        &mut value,
+        &mut value_size,
+    ) == 0
+        || value_size < size_of::<VS_FIXEDFILEINFO>() as u32
+    {
+        return None;
+    }
+    let info = &*(value as *const VS_FIXEDFILEINFO);
+    if info.dwSignature as i32 != VS_FFI_SIGNATURE {
+        return None;
+    }
+    Some(format!(
+        "{}.{}.{}.{}",
+        info.dwFileVersionMS >> 16,
+        info.dwFileVersionMS & 0xffff,
+        info.dwFileVersionLS >> 16,
+        info.dwFileVersionLS & 0xffff
+    ))
 }
 
 fn nvcpl_path() -> Option<PathBuf> {

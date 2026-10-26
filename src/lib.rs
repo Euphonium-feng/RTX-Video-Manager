@@ -33,6 +33,34 @@ pub struct HdrSnapshot {
     pub saturation: i32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum CompatibilityMode {
+    WritableVerified,
+    ReadOnlyUnknownBuild,
+}
+
+impl CompatibilityMode {
+    pub const fn is_writable(self) -> bool {
+        matches!(self, Self::WritableVerified)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct CompatibilityInfo {
+    pub mode: CompatibilityMode,
+    pub actual_sha256: String,
+    pub expected_sha256: String,
+    pub dll_version: Option<String>,
+    pub probe_passed: bool,
+    pub reason: Option<String>,
+}
+
+impl CompatibilityInfo {
+    pub fn is_writable(&self) -> bool {
+        self.mode.is_writable()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToggleOutcome {
     pub before: HdrSnapshot,
@@ -89,6 +117,7 @@ pub enum AppError {
     NoHdrDisplay,
     WindowsHdrDisabled,
     SurroundEnabled,
+    ReadOnlyCompatibility,
     VerificationFailed,
     RollbackFailed,
     Io(String),
@@ -118,6 +147,9 @@ impl AppError {
             Self::NoHdrDisplay => "未检测到活动的 HDR10 显示器。".into(),
             Self::WindowsHdrDisabled => "Windows HDR 未开启。".into(),
             Self::SurroundEnabled => "NVIDIA Surround 已开启，与 RTX 视频 HDR 冲突。".into(),
+            Self::ReadOnlyCompatibility => {
+                "当前 NVIDIA 构建未经验证，已进入只读兼容模式并禁止写入。".into()
+            }
             Self::VerificationFailed => "写入后的回读校验失败，已尝试恢复原状态。".into(),
             Self::RollbackFailed => "写入失败，且无法恢复原始 HDR 状态。".into(),
             Self::Io(detail) => detail.clone(),
@@ -283,6 +315,24 @@ pub fn validate_for_write(snapshot: &HdrSnapshot) -> Result<(), AppError> {
     }
 }
 
+pub fn classify_compatibility(
+    hash_matches: bool,
+    signature_valid: bool,
+    probe_valid: bool,
+) -> Result<CompatibilityMode, AppError> {
+    if !signature_valid {
+        return Err(AppError::SignatureInvalid);
+    }
+    if !probe_valid {
+        return Err(AppError::InvalidData("HDR 读取探针未通过"));
+    }
+    Ok(if hash_matches {
+        CompatibilityMode::WritableVerified
+    } else {
+        CompatibilityMode::ReadOnlyUnknownBuild
+    })
+}
+
 pub fn validate_hdr_adjustments(
     snapshot: &HdrSnapshot,
     adjustments: &HdrAdjustments,
@@ -322,6 +372,9 @@ pub fn toggle_with_transport<T: NvTransport>(transport: &mut T) -> Result<Toggle
     let desired = !before.enabled;
     let desired_raw = encode_hdr_write(&original, desired);
     if let Err(write_error) = transport.write_info(&desired_raw) {
+        if matches!(&write_error, AppError::ReadOnlyCompatibility) {
+            return Err(write_error);
+        }
         return recover_after_error(transport, &original, &before, write_error);
     }
 
@@ -364,6 +417,9 @@ pub fn tune_with_transport<T: NvTransport>(
 
     let desired_raw = encode_hdr_tuning(&original, adjustments);
     if let Err(write_error) = transport.write_info(&desired_raw) {
+        if matches!(&write_error, AppError::ReadOnlyCompatibility) {
+            return Err(write_error);
+        }
         return recover_tuning_after_error(transport, &original, &before, write_error);
     }
 
@@ -525,6 +581,15 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     result
 }
 
+pub fn hex_lower(bytes: &[u8]) -> String {
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use fmt::Write as _;
+        let _ = write!(result, "{byte:02x}");
+    }
+    result
+}
+
 pub fn is_verified_nvcpl(bytes: &[u8]) -> bool {
     sha256_hex(bytes) == NVCPL_SHA256_HEX
 }
@@ -624,6 +689,31 @@ mod tests {
         assert_eq!(snapshot.peak_max, 1440);
         assert_eq!(snapshot.contrast, 0);
         assert_eq!(snapshot.saturation, 0);
+    }
+
+    #[test]
+    fn classifies_verified_and_unknown_signed_builds() {
+        assert_eq!(
+            classify_compatibility(true, true, true),
+            Ok(CompatibilityMode::WritableVerified)
+        );
+        assert_eq!(
+            classify_compatibility(false, true, true),
+            Ok(CompatibilityMode::ReadOnlyUnknownBuild)
+        );
+        assert_eq!(
+            classify_compatibility(true, false, true),
+            Err(AppError::SignatureInvalid)
+        );
+        assert_eq!(
+            classify_compatibility(false, true, false),
+            Err(AppError::InvalidData("HDR 读取探针未通过"))
+        );
+    }
+
+    #[test]
+    fn encodes_raw_hdr_bytes_as_lowercase_hex() {
+        assert_eq!(hex_lower(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
     }
 
     #[test]
@@ -823,6 +913,32 @@ mod tests {
         );
         assert_eq!(transport.writes.len(), 2);
         assert_eq!(transport.writes[1], original);
+    }
+
+    #[test]
+    fn read_only_write_error_does_not_attempt_rollback() {
+        let adjustments = HdrAdjustments {
+            peak_brightness: 1400,
+            middle_gray: 45,
+            contrast: 5,
+            saturation: -5,
+        };
+        let original = sample_raw(false);
+        let mut transport = FakeTransport::new(vec![Ok(original)])
+            .with_write_results(vec![Err(AppError::ReadOnlyCompatibility), Ok(())]);
+        assert_eq!(
+            tune_with_transport(&mut transport, &adjustments),
+            Err(AppError::ReadOnlyCompatibility)
+        );
+        assert_eq!(transport.writes.len(), 1);
+
+        let mut transport = FakeTransport::new(vec![Ok(original)])
+            .with_write_results(vec![Err(AppError::ReadOnlyCompatibility), Ok(())]);
+        assert_eq!(
+            toggle_with_transport(&mut transport),
+            Err(AppError::ReadOnlyCompatibility)
+        );
+        assert_eq!(transport.writes.len(), 1);
     }
 
     #[test]

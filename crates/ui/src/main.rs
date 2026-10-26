@@ -12,8 +12,8 @@ use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
 use rtx_hdr_switch::ipc::{HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot};
 use rtx_hdr_switch::{
-    AppError, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_SHA256_HEX,
-    Settings, format_hotkey,
+    AppError, CompatibilityInfo, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
+    NVCPL_SHA256_HEX, Settings, format_hotkey,
 };
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -610,6 +610,22 @@ impl ConsoleApp {
         }
     }
 
+    fn compatibility(&self) -> Option<&CompatibilityInfo> {
+        self.snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.diagnostics.compatibility.as_ref())
+    }
+
+    fn compatibility_writable(&self) -> bool {
+        self.compatibility()
+            .is_some_and(CompatibilityInfo::is_writable)
+    }
+
+    fn compatibility_read_only(&self) -> bool {
+        self.compatibility()
+            .is_some_and(|compatibility| !compatibility.is_writable())
+    }
+
     fn busy(&self) -> bool {
         self.snapshot.as_ref().is_some_and(|snapshot| snapshot.busy)
     }
@@ -617,6 +633,7 @@ impl ConsoleApp {
     fn can_toggle(&self) -> bool {
         self.connection_error.is_none()
             && !self.busy()
+            && self.compatibility_writable()
             && self
                 .hdr_ready()
                 .is_some_and(|hdr| hdr.supported && hdr.error_code == 0)
@@ -625,9 +642,73 @@ impl ConsoleApp {
     fn can_tune(&self) -> bool {
         self.connection_error.is_none()
             && !self.busy()
+            && self.compatibility_writable()
             && self
                 .hdr_ready()
                 .is_some_and(|hdr| hdr.supported && hdr.error_code == 0)
+    }
+
+    fn diagnostic_text(&self) -> String {
+        let mut lines = vec![
+            "RTX HDR Switch diagnostics".to_string(),
+            format!(
+                "app_version={}",
+                self.snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.app_version.as_str())
+                    .unwrap_or("unknown")
+            ),
+        ];
+        if let Some(diagnostics) = self
+            .snapshot
+            .as_ref()
+            .map(|snapshot| &snapshot.diagnostics)
+        {
+            lines.push(format!(
+                "nvcpl_path={}",
+                diagnostics.nvcpl_path.as_deref().unwrap_or("not_found")
+            ));
+            lines.push(format!("expected_sha256={}", diagnostics.expected_sha256));
+            if let Some(compatibility) = &diagnostics.compatibility {
+                lines.push(format!(
+                    "compatibility={:?}",
+                    compatibility.mode
+                ));
+                lines.push(format!("actual_sha256={}", compatibility.actual_sha256));
+                lines.push(format!(
+                    "dll_version={}",
+                    compatibility.dll_version.as_deref().unwrap_or("unknown")
+                ));
+                lines.push(format!(
+                    "probe_passed={}",
+                    compatibility.probe_passed
+                ));
+                if let Some(reason) = &compatibility.reason {
+                    lines.push(format!("reason={reason}"));
+                }
+            }
+            if let Some(raw) = &diagnostics.raw_hdr_hex {
+                lines.push(format!("raw_0x318={raw}"));
+            }
+            if let Some(last_error) = &diagnostics.last_error {
+                lines.push(format!("last_error={last_error}"));
+            }
+        }
+        if let Some(hdr) = self.hdr_ready() {
+            lines.push(format!("supported={}", hdr.supported));
+            lines.push(format!("enabled={}", hdr.enabled));
+            lines.push(format!("active={}", hdr.active));
+            lines.push(format!("error_code={}", hdr.error_code));
+            lines.push(format!("peak_brightness={}", hdr.peak_brightness));
+            lines.push(format!(
+                "peak_range={}..{}",
+                hdr.peak_min, hdr.peak_max
+            ));
+            lines.push(format!("middle_gray={}", hdr.middle_gray));
+            lines.push(format!("contrast={}", hdr.contrast));
+            lines.push(format!("saturation={}", hdr.saturation));
+        }
+        lines.join("\n")
     }
 
     fn enabled(&self) -> bool {
@@ -658,6 +739,13 @@ impl ConsoleApp {
                 "RTX VIDEO HDR 不可用".into(),
                 error_for_code(hdr.error_code).into(),
                 "● 不可用".into(),
+            ),
+            Some(UiHdrState::Ready(_)) if !self.compatibility_writable() => (
+                "RTX VIDEO HDR · 只读兼容".into(),
+                self.compatibility()
+                    .and_then(|compatibility| compatibility.reason.clone())
+                    .unwrap_or_else(|| "当前 NVIDIA 构建未经验证，已禁止写入。".into()),
+                "● 只读".into(),
             ),
             Some(UiHdrState::Ready(hdr)) if self.busy() => (
                 "正在切换 RTX VIDEO HDR".into(),
@@ -753,6 +841,7 @@ impl ConsoleApp {
         let (status, detail, badge) = self.status_text();
         let enabled = self.enabled();
         let can_toggle = self.can_toggle();
+        let read_only = self.compatibility_read_only();
         let busy = self.busy();
 
         let toggle_style = ButtonCustomVariant::new(cx)
@@ -860,7 +949,9 @@ impl ConsoleApp {
                     .child(
                         Button::new("toggle-hdr")
                             .custom(toggle_style)
-                            .label(if enabled {
+                            .label(if read_only {
+                                "只读兼容模式"
+                            } else if enabled {
                                 "关闭 RTX HDR"
                             } else {
                                 "开启 RTX HDR"
@@ -876,11 +967,15 @@ impl ConsoleApp {
                             .text_size(px(10.))
                             .text_color(rgb(SUBTLE))
                             .text_center()
-                            .child(format!(
-                                "切换 {} · 控制台 {}",
-                                format_hotkey(self.draft.hotkey),
-                                format_hotkey(self.draft.show_console_hotkey)
-                            )),
+                            .child(if read_only {
+                                "当前 NVIDIA 构建仅支持读取".into()
+                            } else {
+                                format!(
+                                    "切换 {} · 控制台 {}",
+                                    format_hotkey(self.draft.hotkey),
+                                    format_hotkey(self.draft.show_console_hotkey)
+                                )
+                            }),
                     ),
             )
     }
@@ -1174,9 +1269,28 @@ impl ConsoleApp {
     fn render_diagnostics(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let hdr = self.hdr_ready();
         let diagnostics = self.snapshot.as_ref().map(|snapshot| &snapshot.diagnostics);
+        let compatibility = diagnostics.and_then(|value| value.compatibility.as_ref());
+        let compatibility_text = compatibility
+            .map(|value| {
+                if value.is_writable() {
+                    "已验证可写"
+                } else {
+                    "只读兼容"
+                }
+            })
+            .unwrap_or("等待读取");
+        let dll_version = compatibility
+            .and_then(|value| value.dll_version.as_deref())
+            .unwrap_or("未知");
+        let probe_text = compatibility
+            .map(|value| if value.probe_passed { "通过" } else { "未完成" })
+            .unwrap_or("等待");
+        let actual_sha256 = compatibility
+            .map(|value| value.actual_sha256.as_str())
+            .unwrap_or("—");
         v_flex()
             .w_full()
-            .h(px(179.))
+            .h(px(294.))
             .flex_shrink_0()
             .gap_3()
             .p_4()
@@ -1195,14 +1309,31 @@ impl ConsoleApp {
                             .child("系统诊断"),
                     )
                     .child(
-                        Button::new("close-diagnostics")
-                            .ghost()
-                            .compact()
-                            .label("返回控制台")
-                            .on_click(cx.listener(|app, _, _, cx| {
-                                app.page = UiPage::Console;
-                                cx.notify();
-                            })),
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Button::new("copy-diagnostics")
+                                    .ghost()
+                                    .compact()
+                                    .label("复制诊断")
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        cx.write_to_clipboard(ClipboardItem::new_string(
+                                            app.diagnostic_text(),
+                                        ));
+                                        app.saved_note = Some("诊断信息已复制".into());
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                Button::new("close-diagnostics")
+                                    .ghost()
+                                    .compact()
+                                    .label("返回控制台")
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.page = UiPage::Console;
+                                        cx.notify();
+                                    })),
+                            ),
                     ),
             )
             .child(
@@ -1217,6 +1348,9 @@ impl ConsoleApp {
                             .unwrap_or("未找到"),
                         true,
                     ))
+                    .child(diagnostic_item("兼容模式", compatibility_text, false))
+                    .child(diagnostic_item("DLL 版本", dll_version, false))
+                    .child(diagnostic_item("读取探针", probe_text, false))
                     .child(diagnostic_item(
                         "错误码",
                         &hdr.map_or("—".into(), |value| value.error_code.to_string()),
@@ -1252,6 +1386,14 @@ impl ConsoleApp {
                             .map(|value| value.expected_sha256.as_str())
                             .unwrap_or(NVCPL_SHA256_HEX),
                         true,
+                    ))
+                    .child(diagnostic_item("实际 SHA-256", actual_sha256, true))
+                    .child(diagnostic_item(
+                        "原始 0x318",
+                        diagnostics
+                            .and_then(|value| value.raw_hdr_hex.as_deref())
+                            .unwrap_or("—"),
+                        true,
                     )),
             )
             .child(
@@ -1271,6 +1413,8 @@ impl ConsoleApp {
             || self.connection_error.is_some();
         let connection = if self.connection_error.is_some() {
             "IPC 未连接 · 后台未运行"
+        } else if self.compatibility_read_only() {
+            "HDR 0x318 · 只读兼容模式"
         } else {
             "HDR 0x318 · 后端已连接"
         };
