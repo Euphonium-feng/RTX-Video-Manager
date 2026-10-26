@@ -1280,7 +1280,13 @@ impl ConsoleApp {
             .and_then(|value| value.dll_version.as_deref())
             .unwrap_or("未知版本");
         let probe = compatibility
-            .map(|value| if value.probe_passed { "通过" } else { "未通过" })
+            .map(|value| {
+                if value.probe_passed {
+                    "通过"
+                } else {
+                    "未通过"
+                }
+            })
             .unwrap_or("等待读取");
 
         v_flex()
@@ -1716,7 +1722,11 @@ impl ConsoleApp {
                             .text_color(rgb(MUTED))
                             .child(format!(
                                 "{}：{}",
-                                if enabled { "当前选择" } else { "下次启用" },
+                                if enabled {
+                                    "当前选择"
+                                } else {
+                                    "下次启用"
+                                },
                                 quality_label(self.vsr_choice)
                             )),
                     ),
@@ -1769,13 +1779,11 @@ impl ConsoleApp {
                     }),
                 ),
             )
-            .child(
-                h_flex().w_full().gap_2().mt_auto().children([
-                    quality_guide_cell("AUTO", "驱动按内容自动选择"),
-                    quality_guide_cell("1–2", "性能优先 · GPU 成本更低"),
-                    quality_guide_cell("3–4", "画质优先 · GPU 成本更高"),
-                ]),
-            )
+            .child(h_flex().w_full().gap_2().mt_auto().children([
+                quality_guide_cell("AUTO", "驱动按内容自动选择"),
+                quality_guide_cell("1–2", "性能优先 · GPU 成本更低"),
+                quality_guide_cell("3–4", "画质优先 · GPU 成本更高"),
+            ]))
             .child(
                 h_flex()
                     .w_full()
@@ -1800,7 +1808,11 @@ impl ConsoleApp {
                             .w(px(7.))
                             .h(px(7.))
                             .rounded_full()
-                            .bg(if active_present { rgb(WARM) } else { rgb(MUTED) }),
+                            .bg(if active_present {
+                                rgb(WARM)
+                            } else {
+                                rgb(MUTED)
+                            }),
                     )
                     .child(
                         v_flex()
@@ -1815,11 +1827,7 @@ impl ConsoleApp {
                                 div()
                                     .text_size(px(12.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(if active_present {
-                                        rgb(WARM)
-                                    } else {
-                                        rgb(TEXT)
-                                    })
+                                    .text_color(if active_present { rgb(WARM) } else { rgb(TEXT) })
                                     .child(active),
                             ),
                     )
