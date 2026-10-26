@@ -1000,7 +1000,7 @@ impl ConsoleApp {
     fn render_tuning(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let hdr = self.hdr_ready();
         let peak_range = hdr.map_or("—".into(), |hdr| {
-            format!("{} – {} nits", hdr.peak_min, hdr.peak_max)
+            format!("驱动范围 {} – {} nits", hdr.peak_min, hdr.peak_max)
         });
         let disabled = !self.hdr_dirty || !self.can_tune() || self.tuning_saving;
 

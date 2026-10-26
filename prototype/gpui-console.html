@@ -655,7 +655,7 @@
             <label for="peakInput">峰值亮度</label>
             <input class="tune-input" id="peakInput" type="number" min="400" max="1440" value="1440">
             <input id="peakSlider" type="range" min="400" max="1440" value="1440">
-            <span class="tune-range">400 – 1440 nits</span>
+            <span class="tune-range" id="peakRange">驱动范围 400 – 1440 nits</span>
           </div>
           <div class="tune-control">
             <label for="contrastInput">对比度</label>
@@ -747,6 +747,8 @@
       hotkey: ["Ctrl", "Alt", "H"],
       consoleHotkey: ["Ctrl", "Alt", "G"],
       tuning: { peak: 1440, middleGray: 50, contrast: 0, saturation: 0 },
+      displayPeakMin: 400,
+      displayPeakMax: 1440,
       tuningDirty: false,
     };
 
@@ -792,6 +794,7 @@
       $("actionHint").textContent = state.recording ? "按下包含修饰键的组合，Esc 取消" : `${state.hotkey.join("+")} 可随时切换`;
       $("peakInput").value = state.tuning.peak;
       $("peakSlider").value = state.tuning.peak;
+      $("peakRange").textContent = `驱动范围 ${state.displayPeakMin} – ${state.displayPeakMax} nits`;
       $("middleGrayInput").value = state.tuning.middleGray;
       $("middleGraySlider").value = state.tuning.middleGray;
       $("contrastInput").value = state.tuning.contrast;
