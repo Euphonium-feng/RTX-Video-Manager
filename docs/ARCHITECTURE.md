@@ -82,6 +82,11 @@ The HDR page uses a full-height page container. Its hero keeps a fixed height wh
 the tuning card grows into the remaining space, preserves the shared 14 px corner
 radius and border, and ends above the footer instead of leaving an unwrapped strip.
 
+The overview mirrors the approved prototype: HDR and VSR hero cards share one
+horizontal row, each with live readouts and a compact switch, followed by a three-cell
+status rail for backend compatibility, current video signals, and all three hotkeys.
+The HDR and VSR detail pages pair their hero with a narrow right-side information card.
+
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update
 the local draft, and the console may refresh/read diagnostics. A hotkey attempt shows

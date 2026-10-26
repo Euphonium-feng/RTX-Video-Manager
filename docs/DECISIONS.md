@@ -64,6 +64,9 @@ tray API and spawning a renderer for every shortcut would add latency and memory
 All major console surfaces share the same rounded panel treatment. On the HDR page,
 the tuning panel flexes into the remaining height and keeps a bottom status line, so
 its rounded lower corners stay visible above the footer instead of being clipped.
+The overview deliberately mirrors the HTML prototype's two-column hero layout and
+summary rail rather than stacking two generic full-width rows; the detail pages reuse
+the same card geometry with a narrow driver/video information column.
 
 Rejected: putting GPUI in the resident host, implementing a WebView/Tauri console,
 or replacing native system chrome with per-toggle GPUI windows.

@@ -4,10 +4,29 @@
 
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
-  GPUI console, and the new dual-channel product icon. The branch has not yet
-  completed a green GitHub Actions run or real-machine acceptance.
+  GPUI console, and the new dual-channel product icon.
+- Real-machine review found that the GPUI console is functionally connected but its
+  visual density and hierarchy are still weaker than `prototype/rtx-video-manager.html`.
+  The overview is being changed to side-by-side HDR/VSR cards with a status rail, and
+  the HDR/VSR pages are gaining matching right-side information cards.
 - The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
   been rendered and visually reviewed at 100% and 125% preview scales.
+- GitHub Actions run `40357825705` is green for commit `9d8ebc2`; strict
+  `fmt --check`, Clippy, all tests, both Release builds, packaging, and upload passed.
+- Final artifact ZIP SHA-256 is
+  `A4453C2B574B9B115412AFC715C06B52AC07319E0E32ABCA3449C554B0CF95CA`;
+  host SHA-256 is
+  `5B73016B60A68E1537B3B86C79760E0103AD3B54F1B3BF79DC44E0E2AF23B54D`
+  (656,384 bytes); console SHA-256 is
+  `4326D3CAFA73783A13750CA6EDC92FF61899354B4F8FF5DF92445BB819E7AE79`
+  (17,763,840 bytes).
+- The final host launched in `--background`, updated the preserved `RtxHdrSwitch`
+  startup value to the new executable path, and reported 5.37 MiB private memory.
+  The final console connected over protocol `4` and rendered HDR/VSR state correctly.
+- The HDR tuning card now fills the page and keeps its rounded lower edge above the
+  footer. Its real-machine screenshot was reviewed after the layout change.
+- The HTML prototype navigation bug was fixed by adding `#page-hdr[hidden]`; all five
+  pages were verified not to be covered by the HDR page.
 
 ## Verified
 
@@ -85,6 +104,10 @@
 
 ## Pending
 
+- Rebuild and review the GPUI overview/HDR/VSR visual-parity changes after the next
+  green cloud run. Compare directly with the HTML prototype at 100%, 125%, and 150%.
+- Remove the temporary foreground review window after visual acceptance. Background
+  host/tray verification must remain uninterrupted.
 - Push `feature/rtx-video-manager`, create a draft PR based on
   `feature/readonly-compatibility`, and watch `cargo fmt`, Clippy, all tests, both
   release builds, packaging, and upload with `gh run watch --exit-status`.

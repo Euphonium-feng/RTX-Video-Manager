@@ -907,6 +907,469 @@ impl ConsoleApp {
             )
     }
 
+    fn render_overview_hdr_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (status, detail, badge) = self.status_text();
+        let enabled = self.enabled();
+        let can_toggle = self.can_toggle_hdr();
+        let read_only = self.compatibility_read_only();
+        let hdr = self.hdr_ready();
+        let peak = hdr.map_or("—".into(), |hdr| hdr.peak_brightness.to_string());
+        let range = hdr.map_or("等待驱动范围".into(), |hdr| {
+            format!("{} – {} nits", hdr.peak_min, hdr.peak_max)
+        });
+
+        v_flex()
+            .flex_1()
+            .min_w(px(0.))
+            .h_full()
+            .gap_2()
+            .p_5()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(PANEL))
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(7.))
+                            .h(px(7.))
+                            .rounded_full()
+                            .bg(if enabled { rgb(SIGNAL) } else { rgb(MUTED) }),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(MUTED))
+                            .child(status),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .px_2()
+                            .py_1()
+                            .rounded_full()
+                            .border_1()
+                            .border_color(if enabled {
+                                rgb(SIGNAL).opacity(0.38)
+                            } else {
+                                rgb(RULE)
+                            })
+                            .bg(if enabled {
+                                rgb(SIGNAL).opacity(0.13)
+                            } else {
+                                rgb(PANEL)
+                            })
+                            .text_size(px(10.))
+                            .text_color(if enabled { rgb(SIGNAL) } else { rgb(MUTED) })
+                            .child(badge),
+                    ),
+            )
+            .child(
+                div()
+                    .mt_1()
+                    .font_family("Bahnschrift")
+                    .text_size(px(30.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(TEXT))
+                    .child("RTX VIDEO HDR"),
+            )
+            .child(
+                div()
+                    .min_h(px(38.))
+                    .text_size(px(11.))
+                    .text_color(if self.connection_error.is_some() {
+                        rgb(DANGER)
+                    } else {
+                        rgb(MUTED)
+                    })
+                    .child(detail),
+            )
+            .child(
+                h_flex()
+                    .items_end()
+                    .gap_2()
+                    .child(
+                        div()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(24.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child(peak),
+                    )
+                    .child(
+                        div()
+                            .pb(px(3.))
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("NITS"),
+                    ),
+            )
+            .child(spectrum_bar())
+            .child(
+                h_flex()
+                    .justify_between()
+                    .font_family("Cascadia Mono")
+                    .text_size(px(8.))
+                    .text_color(rgb(SUBTLE))
+                    .child("400 基准")
+                    .child(range)
+                    .child("动态范围"),
+            )
+            .child(
+                h_flex()
+                    .mt_auto()
+                    .items_center()
+                    .gap_3()
+                    .pt_3()
+                    .border_t_1()
+                    .border_color(rgb(RULE))
+                    .child(
+                        Switch::new("overview-hdr-toggle")
+                            .checked(enabled)
+                            .disabled(!can_toggle)
+                            .on_change(cx.listener(|app, _, _, cx| app.toggle_hdr(cx))),
+                    )
+                    .child(
+                        v_flex()
+                            .gap(px(1.))
+                            .child(
+                                div()
+                                    .font_family("Cascadia Mono")
+                                    .text_size(px(9.))
+                                    .text_color(rgb(MUTED))
+                                    .child(format_hotkey(self.draft.hotkey)),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(9.))
+                                    .text_color(rgb(SUBTLE))
+                                    .child(if read_only {
+                                        "只读兼容"
+                                    } else {
+                                        "点击开关立即生效"
+                                    }),
+                            ),
+                    ),
+            )
+    }
+
+    fn render_overview_vsr_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (status, detail, badge) = self.vsr_status_text();
+        let enabled = self.vsr_ready().is_some_and(|vsr| vsr.enabled);
+        let can_toggle = self.can_toggle_vsr();
+        let read_only = self.compatibility_read_only();
+        let quality = self.vsr_ready().map_or(self.vsr_choice, |vsr| vsr.quality);
+        let active_quality = self
+            .vsr_ready()
+            .and_then(|vsr| vsr.active_quality)
+            .map(quality_label)
+            .unwrap_or("无活动视频");
+
+        v_flex()
+            .flex_1()
+            .min_w(px(0.))
+            .h_full()
+            .gap_2()
+            .p_5()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(PANEL))
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(7.))
+                            .h(px(7.))
+                            .rounded_full()
+                            .bg(if enabled { rgb(WARM) } else { rgb(MUTED) }),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(MUTED))
+                            .child(status),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .px_2()
+                            .py_1()
+                            .rounded_full()
+                            .border_1()
+                            .border_color(if enabled {
+                                rgb(WARM).opacity(0.38)
+                            } else {
+                                rgb(RULE)
+                            })
+                            .bg(if enabled {
+                                rgb(WARM).opacity(0.13)
+                            } else {
+                                rgb(PANEL)
+                            })
+                            .text_size(px(10.))
+                            .text_color(if enabled { rgb(WARM) } else { rgb(MUTED) })
+                            .child(badge),
+                    ),
+            )
+            .child(
+                div()
+                    .mt_1()
+                    .font_family("Bahnschrift")
+                    .text_size(px(22.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(TEXT))
+                    .child("RTX VIDEO SUPER RESOLUTION"),
+            )
+            .child(
+                div()
+                    .min_h(px(38.))
+                    .text_size(px(11.))
+                    .text_color(if self.connection_error.is_some() {
+                        rgb(DANGER)
+                    } else {
+                        rgb(MUTED)
+                    })
+                    .child(detail),
+            )
+            .child(
+                h_flex()
+                    .items_end()
+                    .gap_2()
+                    .child(
+                        div()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(24.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child(quality_label(quality).to_string()),
+                    )
+                    .child(
+                        div()
+                            .pb(px(3.))
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("QUALITY · AUTO 可选"),
+                    ),
+            )
+            .child(vsr_ladder())
+            .child(
+                h_flex()
+                    .justify_between()
+                    .font_family("Cascadia Mono")
+                    .text_size(px(8.))
+                    .text_color(rgb(SUBTLE))
+                    .child("AUTO")
+                    .child("1")
+                    .child("2")
+                    .child("3")
+                    .child("4"),
+            )
+            .child(
+                h_flex()
+                    .mt_auto()
+                    .items_center()
+                    .gap_3()
+                    .pt_3()
+                    .border_t_1()
+                    .border_color(rgb(RULE))
+                    .child(
+                        Switch::new("overview-vsr-toggle")
+                            .checked(enabled)
+                            .disabled(!can_toggle)
+                            .on_change(cx.listener(|app, _, _, cx| app.toggle_vsr(cx))),
+                    )
+                    .child(
+                        v_flex()
+                            .gap(px(1.))
+                            .child(
+                                div()
+                                    .font_family("Cascadia Mono")
+                                    .text_size(px(9.))
+                                    .text_color(rgb(MUTED))
+                                    .child(format_hotkey(self.draft.vsr_hotkey)),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(9.))
+                                    .text_color(rgb(SUBTLE))
+                                    .child(if read_only {
+                                        "只读兼容".to_string()
+                                    } else {
+                                        format!("当前生效：{active_quality}")
+                                    }),
+                            ),
+                    ),
+            )
+    }
+
+    fn render_overview_summary(&self) -> impl IntoElement {
+        let compatibility = self
+            .compatibility()
+            .map(|value| {
+                if value.is_writable() {
+                    "已验证可写"
+                } else {
+                    "只读兼容"
+                }
+            })
+            .unwrap_or("正在读取");
+        let hdr_signal = self
+            .hdr_ready()
+            .map(|hdr| {
+                if hdr.active {
+                    "HDR10 输出中"
+                } else if hdr.enabled {
+                    "HDR 等待兼容视频"
+                } else {
+                    "HDR 已关闭"
+                }
+            })
+            .unwrap_or("HDR 读取中");
+        let vsr_signal = self
+            .vsr_ready()
+            .map(|vsr| {
+                if vsr.active {
+                    "VSR 正在生效"
+                } else if vsr.enabled {
+                    "VSR 等待兼容视频"
+                } else {
+                    "VSR 已关闭"
+                }
+            })
+            .unwrap_or("VSR 读取中");
+        let hotkeys = format!(
+            "H {} · V {} · G {}",
+            format_hotkey(self.draft.hotkey),
+            format_hotkey(self.draft.vsr_hotkey),
+            format_hotkey(self.draft.show_console_hotkey)
+        );
+
+        h_flex()
+            .w_full()
+            .h(px(74.))
+            .flex_shrink_0()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(PANEL))
+            .child(summary_cell(
+                "NVIDIA BACKEND",
+                format!("{compatibility} · 0x318 + 0x315"),
+            ))
+            .child(div().w(px(1.)).h(px(38.)).bg(rgb(RULE)))
+            .child(summary_cell(
+                "CURRENT SIGNAL",
+                format!("{hdr_signal} · {vsr_signal}"),
+            ))
+            .child(div().w(px(1.)).h(px(38.)).bg(rgb(RULE)))
+            .child(summary_cell("GLOBAL HOTKEYS", hotkeys))
+    }
+
+    fn render_driver_info(&self) -> impl IntoElement {
+        let compatibility = self.compatibility();
+        let mode = compatibility
+            .map(|value| {
+                if value.is_writable() {
+                    "已验证可写"
+                } else {
+                    "只读兼容"
+                }
+            })
+            .unwrap_or("等待读取");
+        let version = compatibility
+            .and_then(|value| value.dll_version.as_deref())
+            .unwrap_or("未知版本");
+        let actual_hash = compatibility
+            .map(|value| value.actual_sha256.as_str())
+            .unwrap_or("—");
+
+        v_flex()
+            .w(px(212.))
+            .h_full()
+            .flex_shrink_0()
+            .gap_3()
+            .p_4()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(PANEL))
+            .child(
+                h_flex()
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("驱动信息"),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("0x318"),
+                    ),
+            )
+            .child(info_value("兼容模式", mode))
+            .child(info_value("NVCpl 版本", version))
+            .child(info_value("实际 SHA-256", actual_hash))
+    }
+
+    fn render_video_info(&self) -> impl IntoElement {
+        let active = self
+            .vsr_ready()
+            .is_some_and(|vsr| vsr.active)
+            .then_some("正在处理兼容视频")
+            .unwrap_or("等待兼容视频");
+        let active_quality = self
+            .vsr_ready()
+            .and_then(|vsr| vsr.active_quality)
+            .map(quality_label)
+            .unwrap_or("无");
+
+        v_flex()
+            .w(px(212.))
+            .h_full()
+            .flex_shrink_0()
+            .gap_3()
+            .p_4()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(PANEL))
+            .child(
+                h_flex()
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("当前视频"),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("0x315"),
+                    ),
+            )
+            .child(info_value("处理状态", active))
+            .child(info_value("活动档位", active_quality))
+    }
+
     fn render_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (status, detail, badge) = self.status_text();
         let enabled = self.enabled();
@@ -937,9 +1400,9 @@ impl ConsoleApp {
             });
 
         h_flex()
-            .w_full()
-            .h(px(142.))
-            .flex_shrink_0()
+            .flex_1()
+            .min_w(px(0.))
+            .h_full()
             .gap_5()
             .p_5()
             .rounded(px(14.))
@@ -1082,9 +1545,9 @@ impl ConsoleApp {
             });
 
         h_flex()
-            .w_full()
-            .h(px(154.))
-            .flex_shrink_0()
+            .flex_1()
+            .min_w(px(0.))
+            .h_full()
             .gap_5()
             .p_5()
             .rounded(px(14.))
@@ -1204,8 +1667,8 @@ impl ConsoleApp {
         let can_choose = self.can_choose_vsr();
         v_flex()
             .w_full()
-            .h(px(188.))
-            .flex_shrink_0()
+            .flex_1()
+            .min_h(px(188.))
             .gap_3()
             .p_4()
             .rounded(px(14.))
@@ -1282,6 +1745,8 @@ impl ConsoleApp {
                             )
                             .label(quality_label(quality))
                             .disabled(!can_choose)
+                            .w(px(78.))
+                            .h(px(38.))
                             .on_click(cx.listener(move |app, _, _, cx| {
                                 app.choose_vsr_quality(quality, cx);
                             }))
@@ -1972,21 +2437,47 @@ impl Render for ConsoleApp {
         let content = match self.page {
             UiPage::Overview => v_flex()
                 .w_full()
+                .h_full()
                 .gap_3()
-                .child(self.render_hero(cx))
-                .child(self.render_vsr_hero(cx))
+                .child(
+                    h_flex()
+                        .w_full()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .gap_3()
+                        .child(self.render_overview_hdr_card(cx))
+                        .child(self.render_overview_vsr_card(cx)),
+                )
+                .child(self.render_overview_summary())
                 .into_any_element(),
             UiPage::Hdr => v_flex()
                 .w_full()
                 .h_full()
                 .gap_3()
-                .child(self.render_hero(cx))
+                .child(
+                    h_flex()
+                        .w_full()
+                        .h(px(154.))
+                        .flex_shrink_0()
+                        .gap_3()
+                        .child(self.render_hero(cx))
+                        .child(self.render_driver_info()),
+                )
                 .child(self.render_tuning(cx))
                 .into_any_element(),
             UiPage::Vsr => v_flex()
                 .w_full()
+                .h_full()
                 .gap_3()
-                .child(self.render_vsr_hero(cx))
+                .child(
+                    h_flex()
+                        .w_full()
+                        .h(px(164.))
+                        .flex_shrink_0()
+                        .gap_3()
+                        .child(self.render_vsr_hero(cx))
+                        .child(self.render_video_info()),
+                )
                 .child(self.render_vsr_quality(cx))
                 .into_any_element(),
             UiPage::Settings => self.render_settings(cx).into_any_element(),
@@ -2014,6 +2505,86 @@ impl Render for ConsoleApp {
                     .child(self.render_footer(cx)),
             )
     }
+}
+
+fn spectrum_bar() -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .h(px(12.))
+        .overflow_hidden()
+        .rounded(px(5.))
+        .border_1()
+        .border_color(rgb(0x294249))
+        .children(
+            [0x16262B, 0x21464B, 0x3C9299, 0x9BE7E9]
+                .into_iter()
+                .map(|color| div().flex_1().h_full().bg(rgb(color))),
+        )
+}
+
+fn vsr_ladder() -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .h(px(12.))
+        .gap_1()
+        .children(
+            [0.16, 0.24, 0.34, 0.46, 0.74]
+                .into_iter()
+                .map(|opacity| {
+                    div()
+                        .flex_1()
+                        .h_full()
+                        .rounded(px(4.))
+                        .border_1()
+                        .border_color(rgb(0x685A42))
+                        .bg(rgb(WARM).opacity(opacity))
+                }),
+        )
+}
+
+fn summary_cell(label: &'static str, value: String) -> impl IntoElement {
+    v_flex()
+        .flex_1()
+        .min_w(px(0.))
+        .h_full()
+        .justify_center()
+        .gap_1()
+        .px_4()
+        .child(
+            div()
+                .font_family("Cascadia Mono")
+                .text_size(px(8.))
+                .text_color(rgb(SUBTLE))
+                .child(label),
+        )
+        .child(
+            div()
+                .truncate()
+                .text_size(px(10.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(0xDBE8E9))
+                .child(value),
+        )
+}
+
+fn info_value(label: &'static str, value: &str) -> impl IntoElement {
+    v_flex()
+        .gap(px(2.))
+        .child(
+            div()
+                .font_family("Cascadia Mono")
+                .text_size(px(8.))
+                .text_color(rgb(SUBTLE))
+                .child(label),
+        )
+        .child(
+            div()
+                .truncate()
+                .font_family("Cascadia Mono")
+                .text_size(px(9.))
+                .text_color(rgb(0xC8D6D7))
+                .child(value.to_string()),
+        )
 }
 
 fn behavior_row(
