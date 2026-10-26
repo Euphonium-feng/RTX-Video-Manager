@@ -249,51 +249,53 @@ impl ConsoleApp {
                 self.saving = false;
                 self.tuning_saving = false;
             }
-            ClientEvent::Event(HostEvent::Hello { .. }) => {}
-            ClientEvent::Event(HostEvent::Snapshot(snapshot)) => {
-                self.apply_snapshot(snapshot, window, cx);
-            }
-            ClientEvent::Event(HostEvent::HdrChanged(snapshot)) => {
-                if self.tuning_saving {
+            ClientEvent::Event(event) => match *event {
+                HostEvent::Hello { .. } => {}
+                HostEvent::Snapshot(snapshot) => {
+                    self.apply_snapshot(snapshot, window, cx);
+                }
+                HostEvent::HdrChanged(snapshot) => {
+                    if self.tuning_saving {
+                        self.tuning_saving = false;
+                        self.hdr_dirty = false;
+                    }
+                    self.apply_snapshot(snapshot, window, cx);
+                }
+                HostEvent::SettingsApplied(snapshot) => {
+                    self.dirty = false;
+                    self.saving = false;
+                    self.saved_note = Some("设置已保存".into());
+                    self.apply_snapshot(snapshot, window, cx);
+                }
+                HostEvent::Error(UiError { message, critical }) => {
+                    self.saving = false;
                     self.tuning_saving = false;
-                    self.hdr_dirty = false;
+                    self.transient_error = Some(message.clone());
+                    if critical {
+                        self.connection_error = Some(message);
+                    }
                 }
-                self.apply_snapshot(snapshot, window, cx);
-            }
-            ClientEvent::Event(HostEvent::SettingsApplied(snapshot)) => {
-                self.dirty = false;
-                self.saving = false;
-                self.saved_note = Some("设置已保存".into());
-                self.apply_snapshot(snapshot, window, cx);
-            }
-            ClientEvent::Event(HostEvent::Error(UiError { message, critical })) => {
-                self.saving = false;
-                self.tuning_saving = false;
-                self.transient_error = Some(message.clone());
-                if critical {
-                    self.connection_error = Some(message);
+                HostEvent::HotkeyCaptureChanged { active } => {
+                    if !active {
+                        self.recording = None;
+                    }
                 }
-            }
-            ClientEvent::Event(HostEvent::HotkeyCaptureChanged { active }) => {
-                if !active {
-                    self.recording = None;
-                }
-            }
-            ClientEvent::Event(HostEvent::ActivatePage { page }) => {
-                self.page = page;
-                cx.activate(true);
-            }
-            ClientEvent::Event(HostEvent::ToggleConsoleVisibility) => {
-                if window.is_window_active() {
-                    window.remove_window();
-                } else {
-                    window.activate_window();
+                HostEvent::ActivatePage { page } => {
+                    self.page = page;
                     cx.activate(true);
                 }
-            }
-            ClientEvent::Event(HostEvent::Activate) => {
-                cx.activate(true);
-            }
+                HostEvent::ToggleConsoleVisibility => {
+                    if window.is_window_active() {
+                        window.remove_window();
+                    } else {
+                        window.activate_window();
+                        cx.activate(true);
+                    }
+                }
+                HostEvent::Activate => {
+                    cx.activate(true);
+                }
+            },
         }
     }
 
