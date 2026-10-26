@@ -186,3 +186,16 @@ startup entry during upgrades.
 Rejected: changing internal identifiers together with the display name, keeping the
 old single-purpose `H` icon, or shipping only the console icon without tray-state
 variants.
+
+## ADR-017: Keep long identifiers out of compact detail cards
+
+The HDR detail page reserves its narrow driver card for compatibility mode, DLL
+version, and probe result. Full hashes and raw NVIDIA records stay in diagnostics,
+where they can use a full-width row without forcing text through a card edge. The VSR
+quality panel fills the remaining page height and uses a compact Auto/1-2/3-4 guide
+plus the live `0x315` active-quality strip, avoiding both a fixed underfilled card and
+an unstructured empty lower page.
+
+Rejected: silently clipping a 64-character hash in the driver card, shrinking the
+whole detail page until sparse content looked dense, or duplicating raw diagnostic
+payloads in every compact card.

@@ -86,6 +86,10 @@ The overview mirrors the approved prototype: HDR and VSR hero cards share one
 horizontal row, each with live readouts and a compact switch, followed by a three-cell
 status rail for backend compatibility, current video signals, and all three hotkeys.
 The HDR and VSR detail pages pair their hero with a narrow right-side information card.
+The HDR information card shows only compatibility mode, DLL version, and probe result;
+long hashes and raw records stay in diagnostics. The VSR quality panel grows into the
+remaining page height and uses a three-part quality guide plus a live `0x315` status
+strip, so the page does not end above a large unused region.
 
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update

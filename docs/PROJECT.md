@@ -58,6 +58,9 @@ RTX Video Super Resolution (VSR) without opening NVIDIA App. The product name is
 - The console title bar exposes minimize and close only; maximize is not offered.
 - The HDR tuning card fills the remaining page height as one rounded surface; it must
   not leave an unwrapped strip above the footer or clip its lower corners.
+- The HDR information card contains only compact status fields; full hashes and raw
+  records remain in diagnostics. The VSR quality panel fills the remaining page height
+  with its live active-quality strip rather than leaving a large empty region.
 - The release archive contains `RtxVideoManager.exe` and
   `RtxVideoManagerConsole.exe` together.
 - `RtxVideoManagerConsole.exe` displays its embedded product icon in Windows shell surfaces

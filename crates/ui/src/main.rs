@@ -1279,16 +1279,16 @@ impl ConsoleApp {
         let version = compatibility
             .and_then(|value| value.dll_version.as_deref())
             .unwrap_or("未知版本");
-        let actual_hash = compatibility
-            .map(|value| value.actual_sha256.as_str())
-            .unwrap_or("—");
+        let probe = compatibility
+            .map(|value| if value.probe_passed { "通过" } else { "未通过" })
+            .unwrap_or("等待读取");
 
         v_flex()
             .w(px(212.))
             .h_full()
             .flex_shrink_0()
             .overflow_hidden()
-            .gap_3()
+            .gap_2()
             .p_4()
             .rounded(px(14.))
             .border_1()
@@ -1314,27 +1314,35 @@ impl ConsoleApp {
             )
             .child(info_value("兼容模式", mode))
             .child(info_value("NVCpl 版本", version))
-            .child(info_value("实际 SHA-256", actual_hash))
+            .child(info_value("读取探针", probe))
+            .child(
+                div()
+                    .mt_auto()
+                    .text_size(px(9.))
+                    .text_color(rgb(SUBTLE))
+                    .child("完整哈希与原始数据见诊断"),
+            )
     }
 
     fn render_video_info(&self) -> impl IntoElement {
-        let active = if self.vsr_ready().is_some_and(|vsr| vsr.active) {
+        let vsr = self.vsr_ready();
+        let active = if vsr.is_some_and(|vsr| vsr.active) {
             "正在处理兼容视频"
         } else {
             "等待兼容视频"
         };
-        let active_quality = self
-            .vsr_ready()
+        let active_quality = vsr
             .and_then(|vsr| vsr.active_quality)
             .map(quality_label)
             .unwrap_or("无");
+        let selected_quality = vsr.map(|vsr| quality_label(vsr.quality)).unwrap_or("—");
 
         v_flex()
             .w(px(212.))
             .h_full()
             .flex_shrink_0()
             .overflow_hidden()
-            .gap_3()
+            .gap_2()
             .p_4()
             .rounded(px(14.))
             .border_1()
@@ -1360,6 +1368,14 @@ impl ConsoleApp {
             )
             .child(info_value("处理状态", active))
             .child(info_value("活动档位", active_quality))
+            .child(info_value("启用档位", selected_quality))
+            .child(
+                div()
+                    .mt_auto()
+                    .text_size(px(9.))
+                    .text_color(rgb(SUBTLE))
+                    .child("播放兼容视频时由驱动实时更新"),
+            )
     }
 
     fn render_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1654,16 +1670,17 @@ impl ConsoleApp {
     fn render_vsr_quality(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let vsr = self.vsr_ready().cloned();
         let enabled = vsr.as_ref().is_some_and(|value| value.enabled);
-        let active = vsr
+        let active_quality = vsr
             .as_ref()
             .and_then(|value| value.active_quality)
-            .map(quality_label)
-            .unwrap_or("无活动视频");
+            .map(quality_label);
+        let active = active_quality.unwrap_or("无活动视频");
+        let active_present = active_quality.is_some();
         let can_choose = self.can_choose_vsr();
         v_flex()
             .w_full()
-            .h(px(204.))
-            .flex_shrink_0()
+            .flex_1()
+            .min_h(px(0.))
             .gap_3()
             .p_4()
             .rounded(px(14.))
@@ -1697,7 +1714,11 @@ impl ConsoleApp {
                             .ml_auto()
                             .text_size(px(10.))
                             .text_color(rgb(MUTED))
-                            .child(format!("当前生效：{active}")),
+                            .child(format!(
+                                "{}：{}",
+                                if enabled { "当前选择" } else { "下次启用" },
+                                quality_label(self.vsr_choice)
+                            )),
                     ),
             )
             .child(
@@ -1711,7 +1732,7 @@ impl ConsoleApp {
                     }),
             )
             .child(
-                h_flex().gap_2().children(
+                h_flex().w_full().gap_2().children(
                     [
                         VsrQuality::Auto,
                         VsrQuality::Level1,
@@ -1749,14 +1770,81 @@ impl ConsoleApp {
                 ),
             )
             .child(
+                h_flex().w_full().gap_2().mt_auto().children([
+                    quality_guide_cell("AUTO", "驱动按内容自动选择"),
+                    quality_guide_cell("1–2", "性能优先 · GPU 成本更低"),
+                    quality_guide_cell("3–4", "画质优先 · GPU 成本更高"),
+                ]),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .h(px(42.))
+                    .items_center()
+                    .gap_3()
+                    .px_4()
+                    .rounded(px(10.))
+                    .border_1()
+                    .border_color(if active_present {
+                        rgb(WARM).opacity(0.42)
+                    } else {
+                        rgb(RULE)
+                    })
+                    .bg(if active_present {
+                        rgb(WARM).opacity(0.08)
+                    } else {
+                        rgb(RAISED)
+                    })
+                    .child(
+                        div()
+                            .w(px(7.))
+                            .h(px(7.))
+                            .rounded_full()
+                            .bg(if active_present { rgb(WARM) } else { rgb(MUTED) }),
+                    )
+                    .child(
+                        v_flex()
+                            .gap(px(1.))
+                            .child(
+                                div()
+                                    .text_size(px(9.))
+                                    .text_color(rgb(SUBTLE))
+                                    .child("当前视频生效档位"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(if active_present {
+                                        rgb(WARM)
+                                    } else {
+                                        rgb(TEXT)
+                                    })
+                                    .child(active),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("0x315"),
+                    ),
+            )
+            .child(
                 h_flex()
                     .mt_auto()
                     .gap_4()
                     .text_size(px(10.))
                     .text_color(rgb(SUBTLE))
-                    .child("Auto 由驱动选择档位")
-                    .child("1 性能优先")
-                    .child("4 画质优先"),
+                    .child("关闭 VSR 时仅保存下次档位，不调用写接口")
+                    .child(
+                        div()
+                            .ml_auto()
+                            .font_family("Cascadia Mono")
+                            .child("实时状态读取 0x315 · 档位写入 0x317"),
+                    ),
             )
     }
 
@@ -2529,6 +2617,35 @@ fn summary_cell(label: &'static str, value: String) -> impl IntoElement {
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(0xDBE8E9))
                 .child(value),
+        )
+}
+
+fn quality_guide_cell(label: &'static str, detail: &'static str) -> impl IntoElement {
+    v_flex()
+        .flex_1()
+        .h(px(44.))
+        .min_w(px(0.))
+        .justify_center()
+        .gap(px(2.))
+        .px_3()
+        .rounded(px(9.))
+        .border_1()
+        .border_color(rgb(RULE))
+        .bg(rgb(RAISED))
+        .child(
+            div()
+                .font_family("Cascadia Mono")
+                .text_size(px(9.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(0xDBE8E9))
+                .child(label),
+        )
+        .child(
+            div()
+                .truncate()
+                .text_size(px(9.))
+                .text_color(rgb(SUBTLE))
+                .child(detail),
         )
 }
 
