@@ -1208,7 +1208,7 @@ impl ConsoleApp {
             .as_ref()
             .and_then(|value| value.active_quality)
             .map(quality_label)
-            .unwrap_or_else(|| "无活动视频".into());
+            .unwrap_or("无活动视频");
         let can_choose = self.can_choose_vsr();
         v_flex()
             .w_full()
@@ -1785,10 +1785,10 @@ impl ConsoleApp {
                     ))
                     .child(diagnostic_item(
                         "VSR 活动档位",
-                        &vsr
+                        vsr
                             .and_then(|value| value.active_quality)
                             .map(quality_label)
-                            .unwrap_or_else(|| "无".into()),
+                            .unwrap_or("无"),
                         false,
                     ))
                     .child(diagnostic_item(
