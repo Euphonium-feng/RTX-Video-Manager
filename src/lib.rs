@@ -336,7 +336,9 @@ pub fn classify_compatibility(
 }
 
 pub fn is_nvidia_signer_organization(organization: &str) -> bool {
-    organization.trim().eq_ignore_ascii_case("NVIDIA Corporation")
+    organization
+        .trim()
+        .eq_ignore_ascii_case("NVIDIA Corporation")
 }
 
 pub fn validate_hdr_adjustments(

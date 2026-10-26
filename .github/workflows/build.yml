@@ -39,9 +39,7 @@ jobs:
 
       - name: Format
         shell: pwsh
-        run: |
-          cargo fmt --all
-          git diff -- src crates
+        run: cargo fmt --all -- --check
 
       - name: Clippy
         shell: pwsh

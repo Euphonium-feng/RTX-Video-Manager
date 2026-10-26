@@ -681,10 +681,7 @@ impl ConsoleApp {
                 if !hdr.supported {
                     "当前 GPU 或显示器不支持 RTX 视频 HDR；当前构建仅允许读取。".into()
                 } else if hdr.error_code != 0 {
-                    format!(
-                        "{}；当前构建仅允许读取。",
-                        error_for_code(hdr.error_code)
-                    )
+                    format!("{}；当前构建仅允许读取。", error_for_code(hdr.error_code))
                 } else {
                     self.compatibility()
                         .and_then(|compatibility| compatibility.reason.clone())
@@ -1774,7 +1771,7 @@ mod tests {
     use gpui_kit::{Keystroke, Modifiers};
     use rtx_hdr_switch::ipc::{DiagnosticsInfo, UiHdrState, UiSnapshot};
     use rtx_hdr_switch::{
-        CompatibilityInfo, CompatibilityMode, HdrSnapshot, Hotkey, Settings, NVCPL_SHA256_HEX,
+        CompatibilityInfo, CompatibilityMode, HdrSnapshot, Hotkey, NVCPL_SHA256_HEX, Settings,
     };
 
     fn stroke(modifiers: Modifiers, key: &str) -> Keystroke {
