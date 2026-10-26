@@ -1287,6 +1287,7 @@ impl ConsoleApp {
             .w(px(212.))
             .h_full()
             .flex_shrink_0()
+            .overflow_hidden()
             .gap_3()
             .p_4()
             .rounded(px(14.))
@@ -1332,6 +1333,7 @@ impl ConsoleApp {
             .w(px(212.))
             .h_full()
             .flex_shrink_0()
+            .overflow_hidden()
             .gap_3()
             .p_4()
             .rounded(px(14.))
@@ -1366,6 +1368,16 @@ impl ConsoleApp {
         let can_toggle = self.can_toggle_hdr();
         let read_only = self.compatibility_read_only();
         let busy = self.busy_kind() == Some(UiBusyKind::HdrToggle);
+        let primary_hint = if read_only {
+            "当前 NVIDIA 构建仅支持读取".to_string()
+        } else {
+            format!("HDR {}", format_hotkey(self.draft.hotkey))
+        };
+        let secondary_hint = if read_only {
+            "禁止写入".to_string()
+        } else {
+            format!("VSR {}", format_hotkey(self.draft.vsr_hotkey))
+        };
 
         let toggle_style = ButtonCustomVariant::new(cx)
             .color(if enabled {
@@ -1486,20 +1498,13 @@ impl ConsoleApp {
                             .on_click(cx.listener(|app, _, _, cx| app.toggle_hdr(cx))),
                     )
                     .child(
-                        div()
-                            .text_size(px(10.))
+                        v_flex()
+                            .gap(px(1.))
+                            .text_size(px(9.))
                             .text_color(rgb(SUBTLE))
                             .text_center()
-                            .child(if read_only {
-                                "当前 NVIDIA 构建仅支持读取".into()
-                            } else {
-                                format!(
-                                    "切换 {} · VSR {} · 控制台 {}",
-                                    format_hotkey(self.draft.hotkey),
-                                    format_hotkey(self.draft.vsr_hotkey),
-                                    format_hotkey(self.draft.show_console_hotkey)
-                                )
-                            }),
+                            .child(primary_hint)
+                            .child(secondary_hint),
                     ),
             )
     }
@@ -1657,8 +1662,8 @@ impl ConsoleApp {
         let can_choose = self.can_choose_vsr();
         v_flex()
             .w_full()
-            .flex_1()
-            .min_h(px(188.))
+            .h(px(204.))
+            .flex_shrink_0()
             .gap_3()
             .p_4()
             .rounded(px(14.))
@@ -2139,12 +2144,45 @@ impl ConsoleApp {
         let actual_sha256 = compatibility
             .map(|value| value.actual_sha256.as_str())
             .unwrap_or("—");
+        let error_code = hdr.map_or("—".into(), |value| value.error_code.to_string());
+        let peak = hdr.map_or("—".into(), |value| value.peak_brightness.to_string());
+        let peak_range = hdr.map_or("—".into(), |value| {
+            format!("{} – {}", value.peak_min, value.peak_max)
+        });
+        let middle_gray = hdr.map_or("—".into(), |value| value.middle_gray.to_string());
+        let tone = hdr.map_or("—".into(), |value| {
+            format!("{} / {}", value.contrast, value.saturation)
+        });
+        let vsr_status = vsr.map_or("—".into(), |value| {
+            if value.enabled {
+                format!("质量 {}", quality_label(value.quality))
+            } else {
+                "关闭".into()
+            }
+        });
+        let vsr_active = vsr
+            .and_then(|value| value.active_quality)
+            .map(quality_label)
+            .unwrap_or("无")
+            .to_string();
+        let expected_sha256 = diagnostics
+            .map(|value| value.expected_sha256.as_str())
+            .unwrap_or(NVCPL_SHA256_HEX);
+        let raw_hdr = diagnostics
+            .and_then(|value| value.raw_hdr_hex.as_deref())
+            .unwrap_or("—");
+        let raw_vsr_info = diagnostics
+            .and_then(|value| value.raw_vsr_info_hex.as_deref())
+            .unwrap_or("—");
+        let raw_vsr_value = diagnostics
+            .and_then(|value| value.raw_vsr_value_hex.as_deref())
+            .unwrap_or("—");
         v_flex()
             .w_full()
-            .h(px(330.))
-            .flex_shrink_0()
+            .h_full()
             .gap_3()
             .p_4()
+            .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
@@ -2191,93 +2229,34 @@ impl ConsoleApp {
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap_3()
-                    .child(diagnostic_item(
+                    .gap_2()
+                    .child(diagnostic_compact(
                         "NVCpl 路径",
                         diagnostics
                             .and_then(|value| value.nvcpl_path.as_deref())
                             .unwrap_or("未找到"),
-                        true,
                     ))
-                    .child(diagnostic_item("兼容模式", compatibility_text, false))
-                    .child(diagnostic_item("DLL 版本", dll_version, false))
-                    .child(diagnostic_item("读取探针", probe_text, false))
-                    .child(diagnostic_item(
-                        "错误码",
-                        &hdr.map_or("—".into(), |value| value.error_code.to_string()),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "峰值",
-                        &hdr.map_or("—".into(), |value| value.peak_brightness.to_string()),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "峰值范围",
-                        &hdr.map_or("—".into(), |value| {
-                            format!("{} – {}", value.peak_min, value.peak_max)
-                        }),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "中间灰",
-                        &hdr.map_or("—".into(), |value| value.middle_gray.to_string()),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "对比度 / 饱和度",
-                        &hdr.map_or("—".into(), |value| {
-                            format!("{} / {}", value.contrast, value.saturation)
-                        }),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "VSR 状态",
-                        &vsr.map_or("—".into(), |value| {
-                            if value.enabled {
-                                format!("质量 {}", quality_label(value.quality))
-                            } else {
-                                "关闭".into()
-                            }
-                        }),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "VSR 活动档位",
-                        vsr.and_then(|value| value.active_quality)
-                            .map(quality_label)
-                            .unwrap_or("无"),
-                        false,
-                    ))
-                    .child(diagnostic_item(
-                        "允许的 SHA-256",
-                        diagnostics
-                            .map(|value| value.expected_sha256.as_str())
-                            .unwrap_or(NVCPL_SHA256_HEX),
-                        true,
-                    ))
-                    .child(diagnostic_item("实际 SHA-256", actual_sha256, true))
-                    .child(diagnostic_item(
-                        "原始 0x318",
-                        diagnostics
-                            .and_then(|value| value.raw_hdr_hex.as_deref())
-                            .unwrap_or("—"),
-                        true,
-                    ))
-                    .child(diagnostic_item(
-                        "VSR 0x315",
-                        diagnostics
-                            .and_then(|value| value.raw_vsr_info_hex.as_deref())
-                            .unwrap_or("—"),
-                        true,
-                    ))
-                    .child(diagnostic_item(
-                        "VSR 0x317",
-                        diagnostics
-                            .and_then(|value| value.raw_vsr_value_hex.as_deref())
-                            .unwrap_or("—"),
-                        true,
-                    )),
+                    .child(diagnostic_compact("兼容模式", compatibility_text))
+                    .child(diagnostic_compact("DLL 版本", dll_version))
+                    .child(diagnostic_compact("读取探针", probe_text))
+                    .child(diagnostic_compact("错误码", &error_code))
+                    .child(diagnostic_compact("峰值", &peak))
+                    .child(diagnostic_compact("峰值范围", &peak_range))
+                    .child(diagnostic_compact("中间灰", &middle_gray))
+                    .child(diagnostic_compact("对比度 / 饱和度", &tone))
+                    .child(diagnostic_compact("VSR 状态", &vsr_status))
+                    .child(diagnostic_compact("VSR 活动档位", &vsr_active)),
+            )
+            .child(
+                v_flex()
+                    .w_full()
+                    .mt_auto()
+                    .gap_2()
+                    .child(raw_diagnostic_row("允许的 SHA-256", expected_sha256))
+                    .child(raw_diagnostic_row("实际 SHA-256", actual_sha256))
+                    .child(raw_diagnostic_row("原始 0x318", raw_hdr))
+                    .child(raw_diagnostic_row("原始 0x315", raw_vsr_info))
+                    .child(raw_diagnostic_row("原始 0x317", raw_vsr_value)),
             )
             .child(
                 div().text_size(px(10.)).text_color(rgb(SUBTLE)).child(
@@ -2555,6 +2534,8 @@ fn summary_cell(label: &'static str, value: String) -> impl IntoElement {
 
 fn info_value(label: &'static str, value: &str) -> impl IntoElement {
     v_flex()
+        .w_full()
+        .min_w(px(0.))
         .gap(px(2.))
         .child(
             div()
@@ -2565,6 +2546,9 @@ fn info_value(label: &'static str, value: &str) -> impl IntoElement {
         )
         .child(
             div()
+                .w_full()
+                .min_w(px(0.))
+                .overflow_hidden()
                 .truncate()
                 .font_family("Cascadia Mono")
                 .text_size(px(9.))
@@ -2632,9 +2616,10 @@ fn keycap(label: &str) -> impl IntoElement {
         .child(label.to_string())
 }
 
-fn diagnostic_item(label: &str, value: &str, wide: bool) -> impl IntoElement {
+fn diagnostic_compact(label: &str, value: &str) -> impl IntoElement {
     v_flex()
-        .w(if wide { px(430.) } else { px(205.) })
+        .w(px(244.))
+        .min_w(px(0.))
         .gap(px(1.))
         .child(
             div()
@@ -2644,8 +2629,38 @@ fn diagnostic_item(label: &str, value: &str, wide: bool) -> impl IntoElement {
         )
         .child(
             div()
+                .w_full()
+                .min_w(px(0.))
+                .overflow_hidden()
                 .font_family("Cascadia Mono")
-                .text_size(px(10.))
+                .text_size(px(9.))
+                .text_color(rgb(0xC8D6D7))
+                .truncate()
+                .child(value.to_string()),
+        )
+}
+
+fn raw_diagnostic_row(label: &str, value: &str) -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .min_w(px(0.))
+        .gap_3()
+        .child(
+            div()
+                .w(px(112.))
+                .flex_shrink_0()
+                .font_family("Cascadia Mono")
+                .text_size(px(8.))
+                .text_color(rgb(SUBTLE))
+                .child(label.to_string()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .font_family("Cascadia Mono")
+                .text_size(px(9.))
                 .text_color(rgb(0xC8D6D7))
                 .truncate()
                 .child(value.to_string()),
