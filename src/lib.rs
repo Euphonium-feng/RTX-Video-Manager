@@ -8,6 +8,10 @@ pub const NVCPL_SHA256_HEX: &str =
     "eee812ab8ff74975d3cc7fe77130f5766911b6ca2d9c42c1156376a6c13f79f0";
 pub const HDR_SETTING_ID: u32 = 0x318;
 pub const HDR_INFO_SIZE: usize = 0x30;
+pub const VSR_INFO_SETTING_ID: u32 = 0x315;
+pub const VSR_INFO_SIZE: usize = 0x14;
+pub const VSR_VALUE_SETTING_ID: u32 = 0x317;
+pub const VSR_VALUE_SIZE: usize = 0x04;
 pub const MIDDLE_GRAY_MIN: i32 = 0;
 pub const MIDDLE_GRAY_MAX: i32 = 100;
 pub const TONE_ADJUSTMENT_MIN: i32 = -100;
@@ -31,6 +35,66 @@ pub struct HdrSnapshot {
     pub middle_gray: i32,
     pub contrast: i32,
     pub saturation: i32,
+}
+
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize,
+)]
+pub enum VsrQuality {
+    Off,
+    Level1,
+    Level2,
+    Level3,
+    Level4,
+    #[default]
+    Auto,
+}
+
+impl VsrQuality {
+    pub fn from_raw(value: i32) -> Result<Self, AppError> {
+        match value {
+            0 => Ok(Self::Off),
+            1 => Ok(Self::Level1),
+            2 => Ok(Self::Level2),
+            3 => Ok(Self::Level3),
+            4 => Ok(Self::Level4),
+            5 => Ok(Self::Auto),
+            _ => Err(AppError::InvalidData("VSR 质量档位无效")),
+        }
+    }
+
+    pub const fn raw(self) -> i32 {
+        match self {
+            Self::Off => 0,
+            Self::Level1 => 1,
+            Self::Level2 => 2,
+            Self::Level3 => 3,
+            Self::Level4 => 4,
+            Self::Auto => 5,
+        }
+    }
+
+    pub const fn is_enabled(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    pub const fn remembered(self) -> Self {
+        if self.is_enabled() {
+            self
+        } else {
+            Self::Auto
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct VsrSnapshot {
+    pub supported: bool,
+    pub enabled: bool,
+    pub active: bool,
+    pub quality: VsrQuality,
+    pub active_quality: Option<VsrQuality>,
+    pub status: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -104,6 +168,14 @@ pub struct TuningOutcome {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VsrOutcome {
+    pub before: VsrSnapshot,
+    pub after: VsrSnapshot,
+    pub raw_info: [u8; VSR_INFO_SIZE],
+    pub raw_value: [u8; VSR_VALUE_SIZE],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AppError {
     NvidiaAppMissing,
     UnsupportedVersion,
@@ -116,6 +188,7 @@ pub enum AppError {
     UxdServiceUnavailable,
     InvalidData(&'static str),
     HdrUnsupported,
+    VsrUnsupported,
     NoHdrDisplay,
     WindowsHdrDisabled,
     SurroundEnabled,
@@ -131,7 +204,7 @@ impl AppError {
         match self {
             Self::NvidiaAppMissing => "未找到受支持的 NVIDIA App。".into(),
             Self::UnsupportedVersion => {
-                "NVIDIA App / nvcpl.dll 版本未经验证，已禁止修改 HDR。".into()
+                "NVIDIA App / nvcpl.dll 版本未经验证，已禁止修改视频增强设置。".into()
             }
             Self::SignatureInvalid => "nvcpl.dll 的数字签名无效。".into(),
             Self::NvCplLoadFailed(code) => format!("无法加载 nvcpl.dll（错误 {code}）。"),
@@ -143,9 +216,12 @@ impl AppError {
             Self::ApiFailed(operation, code) => {
                 format!("NVIDIA 接口 {operation} 调用失败（{code}）。")
             }
-            Self::UxdServiceUnavailable => "NVIDIA 显示设置服务未运行，已禁止修改 HDR。".into(),
+            Self::UxdServiceUnavailable => {
+                "NVIDIA 显示设置服务未运行，已禁止修改视频增强设置。".into()
+            }
             Self::InvalidData(detail) => format!("NVIDIA 返回的数据无效：{detail}。"),
             Self::HdrUnsupported => "当前 GPU 或显示器不支持 RTX 视频 HDR。".into(),
+            Self::VsrUnsupported => "当前 GPU 或显示器不支持 RTX 视频超分辨率。".into(),
             Self::NoHdrDisplay => "未检测到活动的 HDR10 显示器。".into(),
             Self::WindowsHdrDisabled => "Windows HDR 未开启。".into(),
             Self::SurroundEnabled => "NVIDIA Surround 已开启，与 RTX 视频 HDR 冲突。".into(),
@@ -153,7 +229,7 @@ impl AppError {
                 "当前 NVIDIA 构建未经验证，已进入只读兼容模式并禁止写入。".into()
             }
             Self::VerificationFailed => "写入后的回读校验失败，已尝试恢复原状态。".into(),
-            Self::RollbackFailed => "写入失败，且无法恢复原始 HDR 状态。".into(),
+            Self::RollbackFailed => "写入失败，且无法恢复原始视频增强状态。".into(),
             Self::Io(detail) => detail.clone(),
             Self::Settings(detail) => detail.clone(),
         }
@@ -191,6 +267,13 @@ impl Hotkey {
         }
     }
 
+    pub const fn vsr_default() -> Self {
+        Self {
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: b'V' as u32,
+        }
+    }
+
     pub fn validate(self) -> Result<(), AppError> {
         if self.modifiers & HOTKEY_MODIFIER_MASK == 0 {
             return Err(AppError::Settings(
@@ -210,19 +293,25 @@ impl Hotkey {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Settings {
     pub hotkey: Hotkey,
+    #[serde(default = "default_vsr_hotkey")]
+    pub vsr_hotkey: Hotkey,
     #[serde(default = "default_show_console_hotkey")]
     pub show_console_hotkey: Hotkey,
     pub start_at_login: bool,
     pub notifications: bool,
+    #[serde(default = "default_last_vsr_quality")]
+    pub last_vsr_quality: VsrQuality,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             hotkey: Hotkey::default(),
+            vsr_hotkey: default_vsr_hotkey(),
             show_console_hotkey: default_show_console_hotkey(),
             start_at_login: true,
             notifications: true,
+            last_vsr_quality: default_last_vsr_quality(),
         }
     }
 }
@@ -230,23 +319,46 @@ impl Default for Settings {
 impl Settings {
     pub fn validate(&self) -> Result<(), AppError> {
         self.hotkey.validate()?;
+        self.vsr_hotkey.validate()?;
         self.show_console_hotkey.validate()?;
-        if self.hotkey == self.show_console_hotkey {
+        if self.hotkey == self.vsr_hotkey
+            || self.hotkey == self.show_console_hotkey
+            || self.vsr_hotkey == self.show_console_hotkey
+        {
             return Err(AppError::Settings(
-                "切换 HDR 和唤起控制台的快捷键不能相同。".into(),
+                "HDR、VSR 和唤起控制台的快捷键不能相同。".into(),
+            ));
+        }
+        if !self.last_vsr_quality.is_enabled() {
+            return Err(AppError::Settings(
+                "下次启用的 VSR 质量档位不能是关闭状态。".into(),
             ));
         }
         Ok(())
     }
 }
 
+fn default_vsr_hotkey() -> Hotkey {
+    Hotkey::vsr_default()
+}
+
 fn default_show_console_hotkey() -> Hotkey {
     Hotkey::console_default()
+}
+
+fn default_last_vsr_quality() -> VsrQuality {
+    VsrQuality::Auto
 }
 
 pub trait NvTransport {
     fn read_info(&mut self) -> Result<[u8; HDR_INFO_SIZE], AppError>;
     fn write_info(&mut self, info: &[u8; HDR_INFO_SIZE]) -> Result<(), AppError>;
+}
+
+pub trait VsrTransport {
+    fn read_vsr_info(&mut self) -> Result<[u8; VSR_INFO_SIZE], AppError>;
+    fn read_vsr_value(&mut self) -> Result<[u8; VSR_VALUE_SIZE], AppError>;
+    fn write_vsr_value(&mut self, value: &[u8; VSR_VALUE_SIZE]) -> Result<(), AppError>;
 }
 
 pub fn parse_hdr_info(raw: &[u8; HDR_INFO_SIZE]) -> Result<HdrSnapshot, AppError> {
@@ -280,6 +392,44 @@ pub fn parse_hdr_info(raw: &[u8; HDR_INFO_SIZE]) -> Result<HdrSnapshot, AppError
         contrast,
         saturation,
     })
+}
+
+pub fn parse_vsr_info(raw: &[u8; VSR_INFO_SIZE]) -> Result<VsrSnapshot, AppError> {
+    let supported = read_bool_slice(raw, 0x00)?;
+    let quality = VsrQuality::from_raw(read_i32_slice(raw, 0x04))?;
+    let status = read_i32_slice(raw, 0x08);
+    if !(0..=5).contains(&status) {
+        return Err(AppError::InvalidData("VSR 活动状态无效"));
+    }
+    let active_quality = if status == 0 {
+        None
+    } else {
+        Some(VsrQuality::from_raw(status)?)
+    };
+    Ok(VsrSnapshot {
+        supported,
+        enabled: quality.is_enabled(),
+        active: active_quality.is_some(),
+        quality,
+        active_quality,
+        status,
+    })
+}
+
+pub fn parse_vsr_value(raw: &[u8; VSR_VALUE_SIZE]) -> Result<VsrQuality, AppError> {
+    VsrQuality::from_raw(read_i32_slice(raw, 0))
+}
+
+pub fn encode_vsr_value(quality: VsrQuality) -> [u8; VSR_VALUE_SIZE] {
+    quality.raw().to_le_bytes()
+}
+
+pub fn validate_vsr_for_write(snapshot: &VsrSnapshot) -> Result<(), AppError> {
+    if snapshot.supported {
+        Ok(())
+    } else {
+        Err(AppError::VsrUnsupported)
+    }
 }
 
 pub fn encode_hdr_write(original: &[u8; HDR_INFO_SIZE], enabled: bool) -> [u8; HDR_INFO_SIZE] {
@@ -326,7 +476,7 @@ pub fn classify_compatibility(
         return Err(AppError::SignatureInvalid);
     }
     if !probe_valid {
-        return Err(AppError::InvalidData("HDR 读取探针未通过"));
+        return Err(AppError::InvalidData("HDR/VSR 读取探针未通过"));
     }
     Ok(if hash_matches {
         CompatibilityMode::WritableVerified
@@ -466,6 +616,158 @@ pub fn tune_with_transport<T: NvTransport>(
     }
 
     recover_tuning_after_error(transport, &original, &before, AppError::VerificationFailed)
+}
+
+pub fn set_vsr_quality_with_transport<T: VsrTransport>(
+    transport: &mut T,
+    desired: VsrQuality,
+) -> Result<VsrOutcome, AppError> {
+    let original_info = transport.read_vsr_info()?;
+    let original_value = transport.read_vsr_value()?;
+    let before = parse_vsr_info(&original_info)?;
+    validate_vsr_for_write(&before)?;
+    if parse_vsr_value(&original_value)? != before.quality {
+        return Err(AppError::InvalidData("VSR 设置值与状态不一致"));
+    }
+    set_vsr_quality_after_read(
+        transport,
+        before,
+        original_value,
+        original_info,
+        desired,
+    )
+}
+
+pub fn toggle_vsr_with_transport<T: VsrTransport>(
+    transport: &mut T,
+    remembered: VsrQuality,
+) -> Result<VsrOutcome, AppError> {
+    let original_info = transport.read_vsr_info()?;
+    let original_value = transport.read_vsr_value()?;
+    let before = parse_vsr_info(&original_info)?;
+    validate_vsr_for_write(&before)?;
+    if parse_vsr_value(&original_value)? != before.quality {
+        return Err(AppError::InvalidData("VSR 设置值与状态不一致"));
+    }
+    let desired = if before.enabled {
+        VsrQuality::Off
+    } else {
+        remembered.remembered()
+    };
+    set_vsr_quality_after_read(
+        transport,
+        before,
+        original_value,
+        original_info,
+        desired,
+    )
+}
+
+fn set_vsr_quality_after_read<T: VsrTransport>(
+    transport: &mut T,
+    before: VsrSnapshot,
+    original_value: [u8; VSR_VALUE_SIZE],
+    original_info: [u8; VSR_INFO_SIZE],
+    desired: VsrQuality,
+) -> Result<VsrOutcome, AppError> {
+    if desired == before.quality {
+        return Ok(VsrOutcome {
+            before: before.clone(),
+            after: before,
+            raw_info: original_info,
+            raw_value: original_value,
+        });
+    }
+
+    let desired_raw = encode_vsr_value(desired);
+    if let Err(write_error) = transport.write_vsr_value(&desired_raw) {
+        if matches!(&write_error, AppError::ReadOnlyCompatibility) {
+            return Err(write_error);
+        }
+        return recover_vsr_after_error(transport, &original_value, &before, write_error);
+    }
+
+    let after_info = match transport.read_vsr_info() {
+        Ok(value) => value,
+        Err(_) => {
+            return recover_vsr_after_error(
+                transport,
+                &original_value,
+                &before,
+                AppError::VerificationFailed,
+            );
+        }
+    };
+    let after_value = match transport.read_vsr_value() {
+        Ok(value) => value,
+        Err(_) => {
+            return recover_vsr_after_error(
+                transport,
+                &original_value,
+                &before,
+                AppError::VerificationFailed,
+            );
+        }
+    };
+    let after = match parse_vsr_info(&after_info) {
+        Ok(value) => value,
+        Err(_) => {
+            return recover_vsr_after_error(
+                transport,
+                &original_value,
+                &before,
+                AppError::VerificationFailed,
+            );
+        }
+    };
+    let value_quality = parse_vsr_value(&after_value).ok();
+    if after.supported == before.supported
+        && after.quality == desired
+        && value_quality == Some(desired)
+    {
+        return Ok(VsrOutcome {
+            before,
+            after,
+            raw_info: after_info,
+            raw_value: after_value,
+        });
+    }
+
+    recover_vsr_after_error(
+        transport,
+        &original_value,
+        &before,
+        AppError::VerificationFailed,
+    )
+}
+
+fn recover_vsr_after_error<T: VsrTransport>(
+    transport: &mut T,
+    original_value: &[u8; VSR_VALUE_SIZE],
+    before: &VsrSnapshot,
+    original_error: AppError,
+) -> Result<VsrOutcome, AppError> {
+    if transport.write_vsr_value(original_value).is_err() {
+        return Err(AppError::RollbackFailed);
+    }
+    let restored_info = transport
+        .read_vsr_info()
+        .ok()
+        .and_then(|raw| parse_vsr_info(&raw).ok());
+    let restored_value = transport
+        .read_vsr_value()
+        .ok()
+        .and_then(|raw| parse_vsr_value(&raw).ok());
+    match (restored_info, restored_value) {
+        (Some(info), Some(value))
+            if info.supported == before.supported
+                && info.quality == before.quality
+                && value == before.quality =>
+        {
+            Err(original_error)
+        }
+        _ => Err(AppError::RollbackFailed),
+    }
 }
 
 fn recover_after_error<T: NvTransport>(
@@ -627,8 +929,25 @@ fn read_i32(raw: &[u8; HDR_INFO_SIZE], offset: usize) -> i32 {
     ])
 }
 
+fn read_i32_slice(raw: &[u8], offset: usize) -> i32 {
+    i32::from_le_bytes([
+        raw[offset],
+        raw[offset + 1],
+        raw[offset + 2],
+        raw[offset + 3],
+    ])
+}
+
 fn read_bool(raw: &[u8; HDR_INFO_SIZE], offset: usize) -> Result<bool, AppError> {
     match read_i32(raw, offset) {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(AppError::InvalidData("布尔字段不是 0 或 1")),
+    }
+}
+
+fn read_bool_slice(raw: &[u8], offset: usize) -> Result<bool, AppError> {
+    match read_i32_slice(raw, offset) {
         0 => Ok(false),
         1 => Ok(true),
         _ => Err(AppError::InvalidData("布尔字段不是 0 或 1")),
@@ -678,6 +997,51 @@ mod tests {
         }
     }
 
+    struct FakeVsrTransport {
+        info_reads: VecDeque<Result<[u8; VSR_INFO_SIZE], AppError>>,
+        value_reads: VecDeque<Result<[u8; VSR_VALUE_SIZE], AppError>>,
+        writes: Vec<[u8; VSR_VALUE_SIZE]>,
+        write_results: VecDeque<Result<(), AppError>>,
+    }
+
+    impl FakeVsrTransport {
+        fn new(
+            info_reads: Vec<Result<[u8; VSR_INFO_SIZE], AppError>>,
+            value_reads: Vec<Result<[u8; VSR_VALUE_SIZE], AppError>>,
+        ) -> Self {
+            Self {
+                info_reads: info_reads.into(),
+                value_reads: value_reads.into(),
+                writes: Vec::new(),
+                write_results: VecDeque::new(),
+            }
+        }
+
+        fn with_write_results(mut self, results: Vec<Result<(), AppError>>) -> Self {
+            self.write_results = results.into();
+            self
+        }
+    }
+
+    impl VsrTransport for FakeVsrTransport {
+        fn read_vsr_info(&mut self) -> Result<[u8; VSR_INFO_SIZE], AppError> {
+            self.info_reads
+                .pop_front()
+                .unwrap_or(Err(AppError::InvalidData("unexpected VSR info read")))
+        }
+
+        fn read_vsr_value(&mut self) -> Result<[u8; VSR_VALUE_SIZE], AppError> {
+            self.value_reads
+                .pop_front()
+                .unwrap_or(Err(AppError::InvalidData("unexpected VSR value read")))
+        }
+
+        fn write_vsr_value(&mut self, value: &[u8; VSR_VALUE_SIZE]) -> Result<(), AppError> {
+            self.writes.push(*value);
+            self.write_results.pop_front().unwrap_or(Ok(()))
+        }
+    }
+
     fn sample_raw(enabled: bool) -> [u8; HDR_INFO_SIZE] {
         let mut raw = [0u8; HDR_INFO_SIZE];
         write_i32(&mut raw, 0x00, 1);
@@ -690,6 +1054,14 @@ mod tests {
         write_i32(&mut raw, 0x1c, 100);
         write_i32(&mut raw, 0x20, 1440);
         write_i32(&mut raw, 0x24, 400);
+        raw
+    }
+
+    fn sample_vsr_info(quality: VsrQuality, status: i32) -> [u8; VSR_INFO_SIZE] {
+        let mut raw = [0u8; VSR_INFO_SIZE];
+        raw[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw[4..8].copy_from_slice(&quality.raw().to_le_bytes());
+        raw[8..12].copy_from_slice(&status.to_le_bytes());
         raw
     }
 
@@ -723,8 +1095,160 @@ mod tests {
         );
         assert_eq!(
             classify_compatibility(false, true, false),
-            Err(AppError::InvalidData("HDR 读取探针未通过"))
+            Err(AppError::InvalidData("HDR/VSR 读取探针未通过"))
         );
+    }
+
+    #[test]
+    fn parses_vsr_state_and_active_quality() {
+        let snapshot = parse_vsr_info(&sample_vsr_info(VsrQuality::Level4, 3)).unwrap();
+        assert!(snapshot.supported);
+        assert!(snapshot.enabled);
+        assert!(snapshot.active);
+        assert_eq!(snapshot.quality, VsrQuality::Level4);
+        assert_eq!(snapshot.active_quality, Some(VsrQuality::Level3));
+        assert_eq!(snapshot.status, 3);
+
+        let automatic = parse_vsr_info(&sample_vsr_info(VsrQuality::Auto, 0)).unwrap();
+        assert!(automatic.enabled);
+        assert!(!automatic.active);
+        assert_eq!(automatic.quality, VsrQuality::Auto);
+
+        let automatic_active =
+            parse_vsr_info(&sample_vsr_info(VsrQuality::Auto, VsrQuality::Auto.raw())).unwrap();
+        assert_eq!(automatic_active.active_quality, Some(VsrQuality::Auto));
+    }
+
+    #[test]
+    fn rejects_invalid_vsr_quality_and_status() {
+        let mut info = sample_vsr_info(VsrQuality::Level4, 0);
+        info[4..8].copy_from_slice(&6i32.to_le_bytes());
+        assert!(parse_vsr_info(&info).is_err());
+
+        let info = sample_vsr_info(VsrQuality::Level4, 6);
+        assert!(parse_vsr_info(&info).is_err());
+    }
+
+    #[test]
+    fn encodes_vsr_quality_as_little_endian_value() {
+        assert_eq!(encode_vsr_value(VsrQuality::Off), 0i32.to_le_bytes());
+        assert_eq!(encode_vsr_value(VsrQuality::Level3), 3i32.to_le_bytes());
+        assert_eq!(encode_vsr_value(VsrQuality::Auto), 5i32.to_le_bytes());
+    }
+
+    #[test]
+    fn changes_vsr_quality_with_readback_verification() {
+        let original_info = sample_vsr_info(VsrQuality::Level4, 0);
+        let after_info = sample_vsr_info(VsrQuality::Level3, 0);
+        let mut transport = FakeVsrTransport::new(
+            vec![Ok(original_info), Ok(after_info)],
+            vec![
+                Ok(encode_vsr_value(VsrQuality::Level4)),
+                Ok(encode_vsr_value(VsrQuality::Level3)),
+            ],
+        );
+        let outcome =
+            set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3).unwrap();
+        assert_eq!(outcome.before.quality, VsrQuality::Level4);
+        assert_eq!(outcome.after.quality, VsrQuality::Level3);
+        assert_eq!(
+            transport.writes,
+            vec![encode_vsr_value(VsrQuality::Level3)]
+        );
+    }
+
+    #[test]
+    fn accepts_volatile_vsr_tail_changes() {
+        let original_info = sample_vsr_info(VsrQuality::Level4, 0);
+        let mut after_info = sample_vsr_info(VsrQuality::Level3, 0);
+        after_info[12..20].copy_from_slice(&[6, 0, 28, 0, 2, 0, 0, 0]);
+        let mut transport = FakeVsrTransport::new(
+            vec![Ok(original_info), Ok(after_info)],
+            vec![
+                Ok(encode_vsr_value(VsrQuality::Level4)),
+                Ok(encode_vsr_value(VsrQuality::Level3)),
+            ],
+        );
+        assert!(set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3).is_ok());
+    }
+
+    #[test]
+    fn skips_identical_vsr_quality_write() {
+        let info = sample_vsr_info(VsrQuality::Level4, 0);
+        let mut transport = FakeVsrTransport::new(
+            vec![Ok(info)],
+            vec![Ok(encode_vsr_value(VsrQuality::Level4))],
+        );
+        assert!(set_vsr_quality_with_transport(&mut transport, VsrQuality::Level4).is_ok());
+        assert!(transport.writes.is_empty());
+    }
+
+    #[test]
+    fn toggles_vsr_with_remembered_quality() {
+        let off_info = sample_vsr_info(VsrQuality::Off, 0);
+        let on_info = sample_vsr_info(VsrQuality::Level3, 0);
+        let mut transport = FakeVsrTransport::new(
+            vec![Ok(off_info), Ok(on_info)],
+            vec![
+                Ok(encode_vsr_value(VsrQuality::Off)),
+                Ok(encode_vsr_value(VsrQuality::Level3)),
+            ],
+        );
+        let outcome =
+            toggle_vsr_with_transport(&mut transport, VsrQuality::Level3).unwrap();
+        assert!(!outcome.before.enabled);
+        assert!(outcome.after.enabled);
+        assert_eq!(outcome.after.quality, VsrQuality::Level3);
+    }
+
+    #[test]
+    fn rejects_unsupported_vsr_before_writing() {
+        let mut info = sample_vsr_info(VsrQuality::Level4, 0);
+        info[0..4].copy_from_slice(&0i32.to_le_bytes());
+        let mut transport = FakeVsrTransport::new(
+            vec![Ok(info)],
+            vec![Ok(encode_vsr_value(VsrQuality::Level4))],
+        );
+        assert_eq!(
+            set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3),
+            Err(AppError::VsrUnsupported)
+        );
+        assert!(transport.writes.is_empty());
+    }
+
+    #[test]
+    fn recovers_vsr_quality_after_readback_mismatch() {
+        let original_info = sample_vsr_info(VsrQuality::Level4, 0);
+        let wrong_info = sample_vsr_info(VsrQuality::Level4, 0);
+        let restored_info = sample_vsr_info(VsrQuality::Level4, 0);
+        let level3 = encode_vsr_value(VsrQuality::Level3);
+        let level4 = encode_vsr_value(VsrQuality::Level4);
+        let mut transport = FakeVsrTransport::new(
+            vec![Ok(original_info), Ok(wrong_info), Ok(restored_info)],
+            vec![
+                Ok(level4),
+                Ok(level4),
+                Ok(level4),
+            ],
+        );
+        assert_eq!(
+            set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3),
+            Err(AppError::VerificationFailed)
+        );
+        assert_eq!(transport.writes, vec![level3, level4]);
+    }
+
+    #[test]
+    fn read_only_vsr_write_does_not_roll_back() {
+        let info = sample_vsr_info(VsrQuality::Level4, 0);
+        let level4 = encode_vsr_value(VsrQuality::Level4);
+        let mut transport = FakeVsrTransport::new(vec![Ok(info)], vec![Ok(level4)])
+            .with_write_results(vec![Err(AppError::ReadOnlyCompatibility), Ok(())]);
+        assert_eq!(
+            set_vsr_quality_with_transport(&mut transport, VsrQuality::Level3),
+            Err(AppError::ReadOnlyCompatibility)
+        );
+        assert_eq!(transport.writes.len(), 1);
     }
 
     #[test]
@@ -983,11 +1507,22 @@ mod tests {
         .validate()
         .is_err());
         assert_eq!(format_hotkey(Hotkey::console_default()), "Ctrl+Alt+G");
+        assert_eq!(format_hotkey(Hotkey::vsr_default()), "Ctrl+Alt+V");
         let duplicate = Settings {
             show_console_hotkey: Hotkey::default(),
             ..Settings::default()
         };
         assert!(duplicate.validate().is_err());
+        let duplicate_vsr = Settings {
+            vsr_hotkey: Hotkey::default(),
+            ..Settings::default()
+        };
+        assert!(duplicate_vsr.validate().is_err());
+        let invalid_remembered = Settings {
+            last_vsr_quality: VsrQuality::Off,
+            ..Settings::default()
+        };
+        assert!(invalid_remembered.validate().is_err());
     }
 
     #[test]

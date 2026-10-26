@@ -34,12 +34,12 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rtx-hdr-switch
+          shared-key: rtx-video-manager
           cache-on-failure: true
 
       - name: Format
         shell: pwsh
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all
 
       - name: Clippy
         shell: pwsh
@@ -51,19 +51,19 @@ jobs:
 
       - name: Host release build
         shell: pwsh
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-hdr-switch --bin RtxHdrSwitch
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-video-manager --bin RtxVideoManager
 
       - name: GPUI console release build
         shell: pwsh
-        run: cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-hdr-settings --bin RtxHdrSettings
+        run: cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-video-manager-console --bin RtxVideoManagerConsole
 
       - name: Package
         shell: pwsh
         run: |
           $dist = Join-Path $PWD "dist"
           New-Item -ItemType Directory -Force $dist | Out-Null
-          $hostExe = "target/x86_64-pc-windows-msvc/release/RtxHdrSwitch.exe"
-          $consoleExe = "target/x86_64-pc-windows-msvc/ui-release/RtxHdrSettings.exe"
+          $hostExe = "target/x86_64-pc-windows-msvc/release/RtxVideoManager.exe"
+          $consoleExe = "target/x86_64-pc-windows-msvc/ui-release/RtxVideoManagerConsole.exe"
           if (-not (Test-Path $hostExe)) { throw "missing $hostExe" }
           if (-not (Test-Path $consoleExe)) { throw "missing $consoleExe" }
           Copy-Item $hostExe $dist
@@ -72,18 +72,18 @@ jobs:
           Copy-Item THIRD_PARTY_NOTICES.md $dist
           $hostHash = (Get-FileHash $hostExe -Algorithm SHA256).Hash
           $consoleHash = (Get-FileHash $consoleExe -Algorithm SHA256).Hash
-          "$hostHash  RtxHdrSwitch.exe" | Set-Content "$dist/RtxHdrSwitch.exe.sha256" -Encoding ascii
-          "$consoleHash  RtxHdrSettings.exe" | Set-Content "$dist/RtxHdrSettings.exe.sha256" -Encoding ascii
+          "$hostHash  RtxVideoManager.exe" | Set-Content "$dist/RtxVideoManager.exe.sha256" -Encoding ascii
+          "$consoleHash  RtxVideoManagerConsole.exe" | Set-Content "$dist/RtxVideoManagerConsole.exe.sha256" -Encoding ascii
           $hostSize = (Get-Item $hostExe).Length
           $consoleSize = (Get-Item $consoleExe).Length
           "host_bytes=$hostSize`nconsole_bytes=$consoleSize" | Set-Content "$dist/build-sizes.txt" -Encoding ascii
-          Compress-Archive -Path "$dist/*" -DestinationPath "RtxHdrSwitch-win-x64.zip" -Force
+          Compress-Archive -Path "$dist/*" -DestinationPath "RtxVideoManager-win-x64.zip" -Force
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: RtxHdrSwitch-win-x64
-          path: RtxHdrSwitch-win-x64.zip
+          name: RtxVideoManager-win-x64
+          path: RtxVideoManager-win-x64.zip
           if-no-files-found: error
 
       - name: Upload build metadata

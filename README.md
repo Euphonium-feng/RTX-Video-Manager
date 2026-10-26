@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="assets/rtx-hdr-console.svg" width="168" alt="RTX HDR Switch icon">
+<img src="assets/rtx-video-manager.svg" width="168" alt="RTX Video Manager icon">
 
-# RTX HDR Switch
+# RTX Video Manager
 
-**一键接管 NVIDIA RTX Video HDR。不是更多设置，而是更快地做对决定。**
+**一块控制台，接管 RTX Video HDR + VSR。不是更多面板，而是更快地做对视觉决定。**
 
 <p>
   <img alt="build" src="https://github.com/Euphonium-feng/RTX-HDR-Switch/actions/workflows/build.yml/badge.svg">
@@ -13,9 +13,9 @@
   <img alt="No WebView" src="https://img.shields.io/badge/WebView-none-65DDE6?style=for-the-badge">
 </p>
 
-`Ctrl+Alt+H` 切换 · `Ctrl+Alt+G` 唤起/收起控制台 · 500 ms 半透明浮层 · 严格回滚事务
+`Ctrl+Alt+H` 切换 HDR · `Ctrl+Alt+V` 切换 VSR · `Ctrl+Alt+G` 唤起/收起控制台 · 500 ms 浮层 · 双通道严格回滚
 
-![RTX HDR 控制台](prototype/gpui-console.png)
+<img src="assets/rtx-video-manager.png" width="180" alt="RTX Video Manager dual-channel icon">
 
 </div>
 
@@ -34,10 +34,10 @@ RTX Video HDR 对真人电影、HDR 预告片和游戏实机画面很有吸引�
 这就不合理了。一个高频、瞬时、情境化的视觉判断，不应该要求你离开视频页面、
 找到显卡控制面板、翻开多层设置，然后再回来继续看。
 
-> **核心痛点：HDR 是否合适是“逐视频”的，但开关入口却是“系统级”的。**
+> **核心痛点：HDR 和超分是否合适是“逐视频”的，但两个入口却都藏在“系统级”驱动面板里。**
 
-RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。它把判断权留给你，
-把操作成本压到一次快捷键。
+RTX Video Manager 不尝试猜测内容类型，也不做脆弱的自动分类。它把判断权留给你，
+把 HDR、VSR 和质量档位的操作成本压到一次快捷键。
 
 ---
 
@@ -46,13 +46,14 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 | 你可能正在经历 | 使用之后 |
 | --- | --- |
 | 为了关 HDR，打开 NVIDIA App 翻三层菜单 | `Ctrl+Alt+H`，一次按键 |
+| 想让动画改用更高档 VSR，又要翻驱动设置 | `Ctrl+Alt+V`，再用控制台选 Auto / 1–4 |
 | 想改 HDR 峰值或调色，又要重新翻驱动面板 | `Ctrl+Alt+G` 打开控制台，滑块与数值直接调 |
 | 控制台挡在视频前，还要去点关闭 | 控制台在前台时再按 `Ctrl+Alt+G`，立即收起 |
 | 不确定当前设置到底是开还是关 | 托盘图标和控制台实时显示状态 |
 | 切完不知道有没有生效 | 500 ms 屏幕下方浮层即时反馈 |
 | 担心修改 HDR 弄坏其他调校参数 | 严格读—改—写—回读—回滚事务 |
 | 想看诊断信息又被大而全的驱动面板淹没 | 专用 GPUI 控制台只展示相关指标 |
-| 不想为了快捷开关常驻一个 WebView 应用 | 轻量 Win32 宿主 + 按需 GPUI 前端 |
+| 想同时管理 HDR 与 VSR，但不想常驻 WebView | 轻量 Win32 宿主 + 按需 GPUI 双功能控制台 |
 
 ---
 
@@ -63,10 +64,12 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 │                        Windows 桌面                          │
 │                                                              │
 │   Ctrl+Alt+H ─────┤                                          │
+│   Ctrl+Alt+V ─────┤                                          │
 │   Ctrl+Alt+G ─────┤                                          │
 │                    ▼                                          │
 │   ┌─────────────────────────┐       ┌────────────────────┐   │
-│   │ RtxHdrSwitch.exe        │◀─────▶│ RtxHdrSettings.exe │   │
+│   │ RtxVideoManager.exe     │◀─────▶│ RtxVideoManager-   │   │
+│   │                         │       │ Console.exe        │   │
 │   │ Win32 resident host     │ IPC   │ GPUI console       │   │
 │   └───────────┬─────────────┘       └────────────────────┘   │
 │               │                                                │
@@ -75,16 +78,16 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 │  托盘子菜单        500 ms 原生浮层                             │
 │       │                                                        │
 │       ▼                                                        │
-│  NVIDIA UXD / NvCpl 0x318                                     │
+│  NVIDIA UXD / HDR 0x318 / VSR 0x315+0x317                    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ### 宿主能力
 
-- 默认快捷键 `Ctrl+Alt+H` 切换 HDR，`Ctrl+Alt+G` 唤起或收起控制台，均可重新录制。
+- 默认快捷键 `Ctrl+Alt+H` 切换 HDR，`Ctrl+Alt+V` 切换 VSR，`Ctrl+Alt+G` 唤起或收起控制台，均可重新录制。
 - 通知区域常驻，左键打开控制台，右键打开原生菜单。
 - 开机启动默认开启，可随时关闭。
-- 切换成功后在当前显示器底部居中显示 **500 ms**、50% 透明度的开启/关闭提示。
+- 切换成功后在当前显示器底部居中显示 **500 ms**、50% 透明度的 HDR/VSR 状态提示。
 - 托盘图标区分开启、关闭和不可用状态。
 - Explorer 重启后自动重建托盘图标。
 
@@ -92,11 +95,13 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 
 - 大号 HDR 状态，以及来自驱动 `0x318` 的峰值、峰值上下限、中间灰、对比度和饱和度。
 - 直接开启/关闭 RTX Video HDR。
+- 直接开启/关闭 RTX VSR，并在 `Auto`、`1`、`2`、`3`、`4` 之间选择质量。
+- `总览 / HDR / VSR / 设置 / 诊断` 五页结构；总览同时显示两个增强通道。
 - 峰值亮度、中间灰、对比度、饱和度均支持滑块和直接数值输入。
 - `还原`无论何时点击都恢复驱动默认组合：峰值上限、中间灰 50、对比度 0、饱和度 0。
-- 两个全局快捷键均可可视化录制，且禁止设置成同一组合。
+- 三个全局快捷键均可可视化录制，且任意两个不能重复。
 - 开机启动与切换浮层开关。
-- NVIDIA DLL 路径、允许哈希、错误码、调校字段与最近错误。
+- NVIDIA DLL 路径、允许哈希、错误码、HDR 调校字段、VSR 原始 `0x315/0x317` 与最近错误。
 - 关闭窗口即退出 GPUI，释放渲染资源；托盘宿主继续工作。
 
 ---
@@ -108,7 +113,7 @@ RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。�
 从 GitHub Actions 最新绿色 `build` run 下载：
 
 ```text
-RtxHdrSwitch-win-x64.zip
+RtxVideoManager-win-x64.zip
 ```
 
 ### 2. 完整解压
@@ -116,13 +121,13 @@ RtxHdrSwitch-win-x64.zip
 压缩包内至少需要这两个文件处在同一目录：
 
 ```text
-RtxHdrSwitch.exe
-RtxHdrSettings.exe
+RtxVideoManager.exe
+RtxVideoManagerConsole.exe
 ```
 
 ### 3. 启动宿主
 
-运行 `RtxHdrSwitch.exe`。首次启动会打开控制台，并默认写入当前用户开机启动项。
+运行 `RtxVideoManager.exe`。首次启动会打开控制台，并默认写入当前用户开机启动项。
 
 ### 4. 开始切换
 
@@ -134,7 +139,8 @@ Ctrl + Alt + H
 
 看到屏幕下方出现 `RTX HDR 开启` 或 `RTX HDR 关闭` 即表示本次事务成功。
 
-> 退出工具不会主动改变当前 HDR 状态。关闭控制台也不会退出后台宿主。
+也可按 `Ctrl + Alt + V` 独立切换 VSR。退出工具不会主动改变当前 HDR/VSR 状态；
+关闭控制台也不会退出后台宿主。
 
 ---
 
@@ -152,9 +158,11 @@ RTX Video HDR 没有 NVIDIA 官方公开 CLI 或支持的公共 API。本项目�
 | STA COM | NVIDIA worker 独立初始化 STA |
 | UXD 服务 | 服务未运行时禁止写入 |
 | 48 字节读探针 | 字段或错误码异常时禁止写入 |
+| VSR 双读探针 | `0x315` 与 `0x317` 档位一致后才允许操作 |
 | Set + Execute | 写入后执行 `0x10000` 提交事务 |
 | 回读确认 | 目标状态与六个调校字段逐项核对 |
-| 自动回滚 | 写入失败或回读不一致时恢复原始 48 字节 |
+| VSR 固定字段 | 只比较 support、quality、status，不把易变尾部当写条件 |
+| 自动回滚 | HDR 恢复原始 48 字节，VSR 恢复并重新提交原档位 |
 
 ### 事务流程
 
@@ -173,7 +181,26 @@ flowchart LR
     I --> K[恢复失败：严重错误]
 ```
 
-**不修改 NVIDIA 驱动注册表。不自动化点击 NVIDIA App。不切换 Windows HDR。不控制 VSR。**
+### VSR 事务
+
+```mermaid
+flowchart LR
+    A[读取 0x315 + 0x317] --> B{支持且档位一致？}
+    B -- 否 --> X[拒绝写入]
+    B -- 是 --> C[只写 0x317 四字节档位]
+    C --> D[SetSetting + Execute]
+    D --> E[回读 0x315 / 0x317]
+    E --> F{目标档位一致且 support 未变？}
+    F -- 是 --> G[发布完整 VSR 快照]
+    F -- 否 --> H[恢复原档位并再次提交]
+    H --> I[成功恢复：报告原错误]
+    H --> J[恢复失败：严重错误]
+```
+
+`Auto=5`，`Off=0`，画质档位 `1..=4`。VSR 关闭时改档位只改变“下次启用质量”，
+不会调用 NVIDIA 写接口。不会访问已知会触发访问冲突的 `0x31b`。
+
+**不修改 NVIDIA 驱动注册表。不自动化点击 NVIDIA App。不切换 Windows HDR。**
 
 ---
 
@@ -208,8 +235,8 @@ flowchart TB
 
 | 进程 | 职责 | 生命周期 |
 | --- | --- | --- |
-| `RtxHdrSwitch.exe` | 托盘、热键、自启、NVIDIA 事务、IPC 服务、原生浮层 | 常驻 |
-| `RtxHdrSettings.exe` | 仪表盘、设置草稿、快捷键录入、诊断展示 | 按需启动，关闭即退出 |
+| `RtxVideoManager.exe` | 托盘、三组热键、自启、HDR/VSR 事务、IPC 服务、原生浮层 | 常驻 |
+| `RtxVideoManagerConsole.exe` | 五页仪表盘、设置草稿、快捷键录入、双功能诊断 | 按需启动，关闭即退出 |
 
 宿主**不链接 GPUI**。只有你真正打开控制台时才启动渲染器，所以每次按快捷键都不会
 拉起 GPU 窗口，也不会把渲染内存长期挂在后台。
@@ -219,7 +246,7 @@ flowchart TB
 - 当前用户命名管道：`\\.\pipe\RtxHdrSwitch.Settings.v1`
 - 拒绝远程客户端。
 - 校验客户端进程 SID 与会话 ID。
-- 协议版本明确为 `1`。
+- 协议版本明确为 `4`，完整快照同时携带 HDR 与 VSR。
 - 4 字节小端长度前缀 + UTF-8 JSON。
 - 单帧上限 64 KiB。
 - **每个连接只有一个线程拥有全部管道 I/O**，避免同步句柄上并发读写导致卡死。
@@ -230,7 +257,7 @@ flowchart TB
 
 不是通用后台，也不是堆卡片的设置页。界面参考硬件监看器和校准台：
 
-- 石墨圆角底板、断裂的冰蓝校准环、白色 `H` 和琥珀色刻度组成产品图标。
+- 石墨视频框、冰蓝 HDR 增强通道、琥珀 VSR 增强通道和中央信号节点组成产品图标。
 - 石墨黑底保留视频周边的低干扰环境。
 - 冰蓝色表达“实时信号 / 可操作”。
 - 琥珀色只用于录制、校准刻度和注意状态。
@@ -239,11 +266,12 @@ flowchart TB
 - 动效只在状态切换时出现，不做持续闪烁和无意义装饰。
 
 <p align="center">
-  <img src="assets/rtx-hdr-console.png" width="128" alt="RTX HDR Console product icon">
+  <img src="assets/rtx-video-manager.png" width="128" alt="RTX Video Manager product icon">
 </p>
 
-图标以 [`assets/rtx-hdr-console.svg`](assets/rtx-hdr-console.svg) 为可编辑母版，并导出
-16–256 px 多尺寸 ICO 编进 `RtxHdrSettings.exe`；运行时不需要旁边再放图片文件。
+图标以 [`assets/rtx-video-manager.svg`](assets/rtx-video-manager.svg) 为可编辑母版，并导出
+16–256 px 多尺寸 ICO 编进 `RtxVideoManagerConsole.exe`；托盘另有开启、关闭、不可用
+三态 ICO。运行时不需要旁边再放图片文件。
 
 <details>
 <summary><strong>视觉令牌</strong></summary>
@@ -269,10 +297,12 @@ flowchart TB
 | 状态 | 程序行为 |
 | --- | --- |
 | 受支持 + HDR10 显示器 + Windows HDR 开启 | 允许切换 |
+| VSR 支持且 `0x315`/`0x317` 读取一致 | 允许 VSR 开关与档位写入 |
 | 未找到 HDR10 显示器 | 只读，提示错误码 1 |
 | Windows HDR 未开启 | 只读，提示错误码 2 |
 | NVIDIA Surround 开启 | 只读，提示错误码 3 |
-| `nvcpl.dll` 路径 / 版本 / 签名不匹配 | 只读 |
+| 哈希未验证，但 NVIDIA 签名、导出和 HDR/VSR 探针均通过 | 只读兼容，只显示状态与诊断 |
+| 签名、导出或读取探针失败 | 功能不可用，禁止写入 |
 | UXD 服务不可用 | 只读 |
 | 写入或回读不一致 | 自动恢复原始状态 |
 
@@ -285,8 +315,8 @@ flowchart TB
 - `nvcpl.dll` `8.17.15.5527`
 - Chrome 155
 
-其他驱动或 NVIDIA App 版本可能改变私有 ABI。程序会降级为只读，但需要重新验证后才能
-开放写入。
+其他驱动或 NVIDIA App 版本可能改变私有 ABI。未知哈希只有在 NVIDIA 签名、导出和
+HDR/VSR 探针全部通过时才进入只读兼容；任何一项失败都会关闭写入路径。
 
 ---
 
@@ -311,11 +341,11 @@ flowchart TB
 ```text
 RTX-HDR-Switch/
 ├─ src/
-│  ├─ lib.rs             # 领域类型、HDR 编解码与回滚事务
-│  ├─ ipc.rs             # 版本化 DTO 与帧协议
+│  ├─ lib.rs             # 领域类型、HDR/VSR 编解码与回滚事务
+│  ├─ ipc.rs             # 协议 v4、双功能 DTO 与帧协议
 │  ├─ host_ipc.rs        # 命名管道服务 / 身份校验 / 单线程 I/O
-│  └─ main.rs            # Win32 宿主、托盘、热键、NVIDIA worker
-├─ crates/ui/            # GPUI 控制台 RtxHdrSettings.exe
+│  └─ main.rs            # Win32 宿主、托盘、三热键、NVIDIA worker
+├─ crates/ui/            # GPUI 控制台 RtxVideoManagerConsole.exe
 ├─ assets/               # 图标、清单与资源
 ├─ prototype/            # HTML/CSS 视觉原型
 ├─ docs/                 # 五份长期项目文档
@@ -333,8 +363,8 @@ RTX-HDR-Switch/
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
-cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-hdr-switch --bin RtxHdrSwitch
-cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-hdr-settings --bin RtxHdrSettings
+cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-video-manager --bin RtxVideoManager
+cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-video-manager-console --bin RtxVideoManagerConsole
 ```
 
 只有当 `gh run watch --exit-status` 成功退出，构建才算通过。
@@ -342,6 +372,9 @@ cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx
 ### 验收清单
 
 - [x] NVIDIA `0x318` 可逆切换与 Chrome `hdrStatus` 变化
+- [x] NVIDIA VSR `0x317` `4 → 3 → 4` 可逆探针与 `0x315` 回读
+- [x] VSR Auto / 1–4 编码、固定字段校验、回滚事务与单元测试
+- [x] 三快捷键唯一性、整组注册与失败回滚
 - [x] 峰值、范围、中间灰、对比度、饱和度保持不变
 - [x] 全局热键注册与 300 ms 内重复触发抑制
 - [x] 托盘图标、菜单与 Explorer 重建
@@ -351,6 +384,10 @@ cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx
 - [x] `Ctrl+Alt+G` 唤起控制台的热键注册与真实按键验证
 - [x] 控制台产品图标嵌入与 EXE 关联图标复核
 - [x] 关闭控制台后释放辅助进程
+- [x] 双功能 HTML 原型：五个页签、双通道总览、100%/125% 预览审查
+- [ ] `feature/rtx-video-manager` 首次绿色云端构建
+- [ ] 改名后的 host/console 包、任务栏图标与旧 HKCU 迁移实测
+- [ ] Chrome 播放/暂停时 VSR `status` 与活动档位变化实测
 - [ ] 500 ms 浮层在最终图标构建上的人工视觉复核
 - [ ] 无 HDR 显示器 / Windows HDR 关闭 / Surround 冲突的人工复测
 
@@ -360,7 +397,7 @@ cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx
 
 - 不自动识别动画、白底或内容类型；开关仍是用户判断。
 - 不支持 Windows HDR 模式切换。
-- 不支持 RTX Video Super Resolution 控制。
+- 不提供 VSR GPU 优先级、游戏检测或自动关闭。
 - 不修改 NVIDIA 注册表，不做 UI 自动化。
 - 不承诺第三方修改版 `nvcpl.dll` 兼容。
 - 当前为私有项目，未声明开源许可证。
@@ -429,6 +466,6 @@ Set + Execute + 回读路径，并有原始字节回滚。
 
 `Ctrl+Alt+H` 切换 · `Ctrl+Alt+G` 控制台
 
-项目细节见 [`docs/`](docs/) · 视觉原型见 [`prototype/gpui-console.html`](prototype/gpui-console.html)
+项目细节见 [`docs/`](docs/) · 双功能视觉原型见 [`prototype/rtx-video-manager.html`](prototype/rtx-video-manager.html)
 
 </div>

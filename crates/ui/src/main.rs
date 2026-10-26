@@ -10,10 +10,12 @@ use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar, h_flex, 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
-use rtx_hdr_switch::ipc::{HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot};
-use rtx_hdr_switch::{
+use rtx_video_manager::ipc::{
+    HostEvent, UiBusyKind, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
+};
+use rtx_video_manager::{
     AppError, CompatibilityInfo, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
-    NVCPL_SHA256_HEX, Settings, format_hotkey,
+    NVCPL_SHA256_HEX, Settings, VsrQuality, VsrSnapshot, format_hotkey,
 };
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -38,7 +40,8 @@ const UI_MUTEX: &str = r"Local\RtxHdrSwitch.SettingsWindow.v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HotkeyField {
-    Toggle,
+    Hdr,
+    Vsr,
     Console,
 }
 
@@ -62,6 +65,7 @@ struct ConsoleApp {
     draft: Settings,
     hdr_draft: Option<HdrAdjustments>,
     hdr_dirty: bool,
+    vsr_choice: VsrQuality,
     tuning_saving: bool,
     page: UiPage,
     recording: Option<HotkeyField>,
@@ -103,8 +107,9 @@ impl ConsoleApp {
             draft: Settings::default(),
             hdr_draft: None,
             hdr_dirty: false,
+            vsr_choice: VsrQuality::Auto,
             tuning_saving: false,
-            page: UiPage::Console,
+            page: UiPage::Overview,
             recording: None,
             saving: false,
             dirty: false,
@@ -254,17 +259,16 @@ impl ConsoleApp {
                 HostEvent::Snapshot(snapshot) => {
                     self.apply_snapshot(snapshot, window, cx);
                 }
-                HostEvent::HdrChanged(snapshot) => {
-                    if self.tuning_saving {
+                HostEvent::StateChanged(snapshot) => {
+                    if self.tuning_saving && snapshot.busy != Some(UiBusyKind::HdrTuning) {
                         self.tuning_saving = false;
                         self.hdr_dirty = false;
                     }
-                    self.apply_snapshot(snapshot, window, cx);
-                }
-                HostEvent::SettingsApplied(snapshot) => {
-                    self.dirty = false;
-                    self.saving = false;
-                    self.saved_note = Some("设置已保存".into());
+                    if self.saving && snapshot.busy.is_none() {
+                        self.dirty = false;
+                        self.saving = false;
+                        self.saved_note = Some("设置已保存".into());
+                    }
                     self.apply_snapshot(snapshot, window, cx);
                 }
                 HostEvent::Error(UiError { message, critical }) => {
@@ -312,6 +316,12 @@ impl ConsoleApp {
             UiHdrState::Ready(hdr) => Some(hdr.clone()),
             _ => None,
         };
+        if snapshot.busy != Some(UiBusyKind::VsrQuality) {
+            self.vsr_choice = match &snapshot.vsr {
+                UiVsrState::Ready(vsr) if vsr.enabled => vsr.quality,
+                _ => snapshot.settings.last_vsr_quality,
+            };
+        }
         self.snapshot = Some(snapshot);
         if !self.hdr_dirty && !self.tuning_saving {
             self.hdr_draft = hdr.as_ref().map(HdrAdjustments::from_snapshot);
@@ -327,7 +337,8 @@ impl ConsoleApp {
 
     fn send(&mut self, command: UiCommand, cx: &mut Context<Self>) {
         let Some(client) = self.ipc.as_ref() else {
-            self.connection_error = Some("后台未连接，请重新启动 RtxHdrSwitch.exe。".into());
+            self.connection_error =
+                Some("后台未连接，请重新启动 RtxVideoManager.exe。".into());
             cx.notify();
             return;
         };
@@ -341,6 +352,22 @@ impl ConsoleApp {
         log_line("console requested HDR toggle");
         self.transient_error = None;
         self.send(UiCommand::ToggleHdr, cx);
+    }
+
+    fn toggle_vsr(&mut self, cx: &mut Context<Self>) {
+        log_line("console requested VSR toggle");
+        self.transient_error = None;
+        self.send(UiCommand::ToggleVsr, cx);
+    }
+
+    fn choose_vsr_quality(&mut self, quality: VsrQuality, cx: &mut Context<Self>) {
+        if self.vsr_choice == quality {
+            return;
+        }
+        self.vsr_choice = quality;
+        self.transient_error = None;
+        self.saved_note = None;
+        self.send(UiCommand::SetVsrQuality { quality }, cx);
     }
 
     fn begin_recording(&mut self, field: HotkeyField, window: &mut Window, cx: &mut Context<Self>) {
@@ -377,17 +404,19 @@ impl ConsoleApp {
         }
         match hotkey_from_keystroke(&event.keystroke) {
             Ok(hotkey) => {
-                let other = match target {
-                    HotkeyField::Toggle => self.draft.show_console_hotkey,
-                    HotkeyField::Console => self.draft.hotkey,
+                let (first, second) = match target {
+                    HotkeyField::Hdr => (self.draft.vsr_hotkey, self.draft.show_console_hotkey),
+                    HotkeyField::Vsr => (self.draft.hotkey, self.draft.show_console_hotkey),
+                    HotkeyField::Console => (self.draft.hotkey, self.draft.vsr_hotkey),
                 };
-                if hotkey == other {
-                    self.transient_error = Some("两个快捷键不能相同。".into());
+                if hotkey == first || hotkey == second {
+                    self.transient_error = Some("三个快捷键不能相同。".into());
                     cx.notify();
                     return;
                 }
                 match target {
-                    HotkeyField::Toggle => self.draft.hotkey = hotkey,
+                    HotkeyField::Hdr => self.draft.hotkey = hotkey,
+                    HotkeyField::Vsr => self.draft.vsr_hotkey = hotkey,
                     HotkeyField::Console => self.draft.show_console_hotkey = hotkey,
                 }
                 self.recording = None;
@@ -470,7 +499,7 @@ impl ConsoleApp {
         &self,
         field: TuningField,
         value: i32,
-        hdr: &rtx_hdr_switch::HdrSnapshot,
+        hdr: &rtx_video_manager::HdrSnapshot,
         source: TuningSource,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -560,6 +589,11 @@ impl ConsoleApp {
 
     fn reset_defaults(&mut self, cx: &mut Context<Self>) {
         self.draft = Settings::default();
+        self.vsr_choice = if self.vsr_ready().is_some_and(|vsr| vsr.enabled) {
+            self.vsr_ready().map(|vsr| vsr.quality).unwrap_or(VsrQuality::Auto)
+        } else {
+            VsrQuality::Auto
+        };
         self.dirty = true;
         self.saved_note = None;
         self.transient_error = None;
@@ -605,9 +639,16 @@ impl ConsoleApp {
         cx.notify();
     }
 
-    fn hdr_ready(&self) -> Option<&rtx_hdr_switch::HdrSnapshot> {
+    fn hdr_ready(&self) -> Option<&rtx_video_manager::HdrSnapshot> {
         match self.snapshot.as_ref().map(|snapshot| &snapshot.hdr) {
             Some(UiHdrState::Ready(hdr)) => Some(hdr),
+            _ => None,
+        }
+    }
+
+    fn vsr_ready(&self) -> Option<&VsrSnapshot> {
+        match self.snapshot.as_ref().map(|snapshot| &snapshot.vsr) {
+            Some(UiVsrState::Ready(vsr)) => Some(vsr),
             _ => None,
         }
     }
@@ -628,17 +669,35 @@ impl ConsoleApp {
             .is_some_and(|compatibility| !compatibility.is_writable())
     }
 
-    fn busy(&self) -> bool {
-        self.snapshot.as_ref().is_some_and(|snapshot| snapshot.busy)
+    fn busy_kind(&self) -> Option<UiBusyKind> {
+        self.snapshot.as_ref().and_then(|snapshot| snapshot.busy)
     }
 
-    fn can_toggle(&self) -> bool {
+    fn busy(&self) -> bool {
+        self.busy_kind().is_some()
+    }
+
+    fn can_toggle_hdr(&self) -> bool {
         self.connection_error.is_none()
             && !self.busy()
             && self.compatibility_writable()
             && self
                 .hdr_ready()
                 .is_some_and(|hdr| hdr.supported && hdr.error_code == 0)
+    }
+
+    fn can_toggle_vsr(&self) -> bool {
+        self.connection_error.is_none()
+            && !self.busy()
+            && self.compatibility_writable()
+            && self.vsr_ready().is_some_and(|vsr| vsr.supported)
+    }
+
+    fn can_choose_vsr(&self) -> bool {
+        self.connection_error.is_none()
+            && !self.busy()
+            && self.vsr_ready().is_some_and(|vsr| vsr.supported)
+            && self.compatibility_writable()
     }
 
     fn can_tune(&self) -> bool {
@@ -654,7 +713,7 @@ impl ConsoleApp {
         self.snapshot
             .as_ref()
             .map(format_diagnostic_text)
-            .unwrap_or_else(|| "RTX HDR Switch diagnostics\napp_version=unknown".into())
+            .unwrap_or_else(|| "RTX Video Manager diagnostics\napp_version=unknown".into())
     }
 
     fn enabled(&self) -> bool {
@@ -699,11 +758,15 @@ impl ConsoleApp {
                 error_for_code(hdr.error_code).into(),
                 "● 不可用".into(),
             ),
-            Some(UiHdrState::Ready(hdr)) if self.busy() => (
+            Some(UiHdrState::Ready(_))
+                if self.busy_kind() == Some(UiBusyKind::HdrToggle) =>
+            {
+                (
                 "正在切换 RTX VIDEO HDR".into(),
                 "请稍候，正在写入并回读 NVIDIA 状态".into(),
                 "● 切换中".into(),
-            ),
+                )
+            }
             Some(UiHdrState::Ready(hdr)) if hdr.enabled => (
                 "RTX VIDEO HDR 已开启".into(),
                 if hdr.active {
@@ -718,6 +781,69 @@ impl ConsoleApp {
                 "当前视频以 SDR 输出".into(),
                 "○ 已关闭".into(),
             ),
+        }
+    }
+
+    fn vsr_status_text(&self) -> (String, String, String) {
+        if let Some(error) = &self.connection_error {
+            return ("VSR 后台连接已断开".into(), error.clone(), "○ 已断线".into());
+        }
+        match self.snapshot.as_ref().map(|snapshot| &snapshot.vsr) {
+            None | Some(UiVsrState::Loading) => (
+                "正在读取 VSR 状态".into(),
+                "正在连接 NVIDIA 视频增强服务".into(),
+                "● 读取中".into(),
+            ),
+            Some(UiVsrState::Error(error)) => (
+                "RTX VSR 不可用".into(),
+                error.clone(),
+                "● 不可用".into(),
+            ),
+            Some(UiVsrState::Ready(vsr)) if !vsr.supported => (
+                "RTX VSR 不支持".into(),
+                "当前 GPU 不支持 RTX 视频超分辨率".into(),
+                "● 不支持".into(),
+            ),
+            Some(UiVsrState::Ready(_)) if !self.compatibility_writable() => (
+                "RTX VSR · 只读兼容".into(),
+                "当前 NVIDIA 构建仅允许读取 VSR 状态".into(),
+                "● 只读".into(),
+            ),
+            Some(UiVsrState::Ready(_))
+                if self.busy_kind() == Some(UiBusyKind::VsrToggle) =>
+            {
+                (
+                    "正在切换 RTX VSR".into(),
+                    "请稍候，正在写入并回读质量档位".into(),
+                    "● 切换中".into(),
+                )
+            }
+            Some(UiVsrState::Ready(vsr)) => {
+                let quality = quality_label(vsr.quality);
+                if vsr.enabled {
+                    (
+                        format!("RTX VSR 已开启 · {quality}"),
+                        if vsr.active {
+                            format!(
+                                "当前视频正在应用{}档超分辨率",
+                                quality_label(vsr.active_quality.unwrap_or(vsr.quality))
+                            )
+                        } else {
+                            "已开启，等待兼容视频开始播放".into()
+                        },
+                        "● 已开启".into(),
+                    )
+                } else {
+                    (
+                        "RTX VSR 已关闭".into(),
+                        format!(
+                            "下次启用使用 {} 档",
+                            quality_label(self.vsr_choice)
+                        ),
+                        "○ 已关闭".into(),
+                    )
+                }
+            }
         }
     }
 
@@ -746,7 +872,7 @@ impl ConsoleApp {
                             .text_size(px(12.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(0xC6D4D5))
-                            .child("RTX HDR 控制台"),
+                            .child("RTX Video Manager"),
                     )
                     .child(
                         div()
@@ -792,9 +918,9 @@ impl ConsoleApp {
     fn render_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (status, detail, badge) = self.status_text();
         let enabled = self.enabled();
-        let can_toggle = self.can_toggle();
+        let can_toggle = self.can_toggle_hdr();
         let read_only = self.compatibility_read_only();
-        let busy = self.busy();
+        let busy = self.busy_kind() == Some(UiBusyKind::HdrToggle);
 
         let toggle_style = ButtonCustomVariant::new(cx)
             .color(if enabled {
@@ -923,13 +1049,313 @@ impl ConsoleApp {
                                 "当前 NVIDIA 构建仅支持读取".into()
                             } else {
                                 format!(
-                                    "切换 {} · 控制台 {}",
+                                    "切换 {} · VSR {} · 控制台 {}",
                                     format_hotkey(self.draft.hotkey),
+                                    format_hotkey(self.draft.vsr_hotkey),
                                     format_hotkey(self.draft.show_console_hotkey)
                                 )
                             }),
                     ),
             )
+    }
+
+    fn render_vsr_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (status, detail, badge) = self.vsr_status_text();
+        let enabled = self.vsr_ready().is_some_and(|vsr| vsr.enabled);
+        let supported = self.vsr_ready().is_some_and(|vsr| vsr.supported);
+        let can_toggle = self.can_toggle_vsr();
+        let read_only = self.compatibility_read_only();
+        let busy = self.busy_kind() == Some(UiBusyKind::VsrToggle);
+
+        let toggle_style = ButtonCustomVariant::new(cx)
+            .color(if enabled {
+                rgb(RAISED).into()
+            } else {
+                rgb(WARM).into()
+            })
+            .foreground(if enabled {
+                rgb(TEXT).into()
+            } else {
+                rgb(INK).into()
+            })
+            .hover(if enabled {
+                rgb(0x203138).into()
+            } else {
+                rgb(0xF5C879).into()
+            })
+            .active(if enabled {
+                rgb(0x17262B).into()
+            } else {
+                rgb(0xD99A43).into()
+            });
+
+        h_flex()
+            .w_full()
+            .h(px(154.))
+            .flex_shrink_0()
+            .gap_5()
+            .p_5()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(rgb(RULE))
+            .bg(rgb(PANEL))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(if enabled {
+                                rgb(WARM)
+                            } else {
+                                rgb(MUTED)
+                            }))
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(MUTED))
+                                    .child(status),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .mt(px(4.))
+                            .font_family("Bahnschrift")
+                            .text_size(px(28.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("RTX VIDEO SUPER RESOLUTION"),
+                    )
+                    .child(
+                        div()
+                            .min_h(px(36.))
+                            .text_size(px(12.))
+                            .text_color(if self.connection_error.is_some() {
+                                rgb(DANGER)
+                            } else {
+                                rgb(MUTED)
+                            })
+                            .child(detail),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .w(px(190.))
+                    .flex_shrink_0()
+                    .justify_center()
+                    .gap_3()
+                    .child(
+                        div()
+                            .self_center()
+                            .px_2()
+                            .py_1()
+                            .rounded_full()
+                            .border_1()
+                            .border_color(if enabled {
+                                rgb(WARM).opacity(0.38)
+                            } else {
+                                rgb(RULE)
+                            })
+                            .bg(if enabled {
+                                rgb(WARM).opacity(0.13)
+                            } else {
+                                rgb(PANEL)
+                            })
+                            .text_size(px(11.))
+                            .text_color(if enabled { rgb(WARM) } else { rgb(MUTED) })
+                            .child(badge),
+                    )
+                    .child(
+                        Button::new("toggle-vsr")
+                            .custom(toggle_style)
+                            .label(if read_only {
+                                "只读兼容模式"
+                            } else if !supported {
+                                "VSR 不可用"
+                            } else if enabled {
+                                "关闭 RTX VSR"
+                            } else {
+                                "开启 RTX VSR"
+                            })
+                            .loading(busy)
+                            .disabled(!can_toggle)
+                            .w_full()
+                            .h(px(46.))
+                            .on_click(cx.listener(|app, _, _, cx| app.toggle_vsr(cx))),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.))
+                            .text_color(rgb(SUBTLE))
+                            .text_center()
+                            .child(if read_only {
+                                "当前 NVIDIA 构建仅支持读取".into()
+                            } else {
+                                format!("切换 {}", format_hotkey(self.draft.vsr_hotkey))
+                            }),
+                    ),
+            )
+    }
+
+    fn render_vsr_quality(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let vsr = self.vsr_ready().cloned();
+        let enabled = vsr.as_ref().is_some_and(|value| value.enabled);
+        let active = vsr
+            .as_ref()
+            .and_then(|value| value.active_quality)
+            .map(quality_label)
+            .unwrap_or_else(|| "无活动视频".into());
+        let can_choose = self.can_choose_vsr();
+        v_flex()
+            .w_full()
+            .h(px(188.))
+            .flex_shrink_0()
+            .gap_3()
+            .p_4()
+            .rounded(px(14.))
+            .border_1()
+            .border_color(if enabled { rgb(WARM).opacity(0.45) } else { rgb(RULE) })
+            .bg(rgb(PANEL))
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("VSR 质量"),
+                    )
+                    .child(
+                        div()
+                            .font_family("Cascadia Mono")
+                            .text_size(px(9.))
+                            .text_color(rgb(SUBTLE))
+                            .child("NVIDIA 0x315 / 0x317"),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .text_size(px(10.))
+                            .text_color(rgb(MUTED))
+                            .child(format!("当前生效：{active}")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(rgb(MUTED))
+                    .child(if enabled {
+                        "数字越高，画质越好，同时占用更多 GPU 性能。"
+                    } else {
+                        "VSR 已关闭；选择的档位会保存为下次启用时使用。"
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .children(
+                        [
+                            VsrQuality::Auto,
+                            VsrQuality::Level1,
+                            VsrQuality::Level2,
+                            VsrQuality::Level3,
+                            VsrQuality::Level4,
+                        ]
+                        .into_iter()
+                        .map(|quality| {
+                            let selected = self.vsr_choice == quality;
+                            Button::new(vsr_quality_id(quality))
+                                .custom(
+                                    ButtonCustomVariant::new(cx)
+                                        .color(if selected {
+                                            rgb(WARM).into()
+                                        } else {
+                                            rgb(RAISED).into()
+                                        })
+                                        .foreground(if selected {
+                                            rgb(INK).into()
+                                        } else {
+                                            rgb(TEXT).into()
+                                        })
+                                        .hover(rgb(0x203138).into())
+                                        .active(rgb(0x17262B).into()),
+                                )
+                                .label(quality_label(quality))
+                                .disabled(!can_choose)
+                                .on_click(cx.listener(move |app, _, _, cx| {
+                                    app.choose_vsr_quality(quality, cx);
+                                }))
+                        }),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .mt_auto()
+                    .gap_4()
+                    .text_size(px(10.))
+                    .text_color(rgb(SUBTLE))
+                    .child("Auto 由驱动选择档位")
+                    .child("1 性能优先")
+                    .child("4 画质优先"),
+            )
+    }
+
+    fn render_tab(
+        &self,
+        page: UiPage,
+        label: &'static str,
+        id: &'static str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let active = self.page == page;
+        Button::new(id)
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(if active {
+                        rgb(RAISED).into()
+                    } else {
+                        rgb(INK).into()
+                    })
+                    .foreground(if active {
+                        rgb(TEXT).into()
+                    } else {
+                        rgb(MUTED).into()
+                    })
+                    .hover(rgb(0x17262B).into())
+                    .active(rgb(0x203138).into()),
+            )
+            .compact()
+            .label(label)
+            .on_click(cx.listener(move |app, _, _, cx| {
+                app.page = page;
+                cx.notify();
+            }))
+    }
+
+    fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .w_full()
+            .h(px(42.))
+            .flex_shrink_0()
+            .gap_1()
+            .children([
+                self.render_tab(UiPage::Overview, "总览", "tab-overview", cx)
+                    .into_any_element(),
+                self.render_tab(UiPage::Hdr, "HDR", "tab-hdr", cx)
+                    .into_any_element(),
+                self.render_tab(UiPage::Vsr, "VSR", "tab-vsr", cx)
+                    .into_any_element(),
+                self.render_tab(UiPage::Settings, "设置", "tab-settings", cx)
+                    .into_any_element(),
+                self.render_tab(UiPage::Diagnostics, "诊断", "tab-diagnostics", cx)
+                    .into_any_element(),
+            ])
     }
 
     fn render_keycaps(&self, hotkey: Hotkey) -> impl IntoElement {
@@ -967,7 +1393,8 @@ impl ConsoleApp {
             .child(self.render_keycaps(hotkey))
             .child(
                 Button::new(match field {
-                    HotkeyField::Toggle => "record-toggle",
+                    HotkeyField::Hdr => "record-hdr",
+                    HotkeyField::Vsr => "record-vsr",
                     HotkeyField::Console => "record-console",
                 })
                 .custom(
@@ -1169,14 +1596,20 @@ impl ConsoleApp {
     fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
-            .h(px(226.))
+            .h(px(273.))
             .flex_shrink_0()
             .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
             .bg(rgb(PANEL))
-            .child(self.render_hotkey_row(HotkeyField::Toggle, "切换 HDR", self.draft.hotkey, cx))
+            .child(self.render_hotkey_row(HotkeyField::Hdr, "切换 HDR", self.draft.hotkey, cx))
+            .child(self.render_hotkey_row(
+                HotkeyField::Vsr,
+                "切换 VSR",
+                self.draft.vsr_hotkey,
+                cx,
+            ))
             .child(self.render_hotkey_row(
                 HotkeyField::Console,
                 "唤起控制台",
@@ -1220,6 +1653,7 @@ impl ConsoleApp {
 
     fn render_diagnostics(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let hdr = self.hdr_ready();
+        let vsr = self.vsr_ready();
         let diagnostics = self.snapshot.as_ref().map(|snapshot| &snapshot.diagnostics);
         let compatibility = diagnostics.and_then(|value| value.compatibility.as_ref());
         let compatibility_text = compatibility
@@ -1248,7 +1682,7 @@ impl ConsoleApp {
             .unwrap_or("—");
         v_flex()
             .w_full()
-            .h(px(294.))
+            .h(px(330.))
             .flex_shrink_0()
             .gap_3()
             .p_4()
@@ -1288,7 +1722,7 @@ impl ConsoleApp {
                                     .compact()
                                     .label("返回控制台")
                                     .on_click(cx.listener(|app, _, _, cx| {
-                                        app.page = UiPage::Console;
+                                        app.page = UiPage::Overview;
                                         cx.notify();
                                     })),
                             ),
@@ -1339,6 +1773,25 @@ impl ConsoleApp {
                         false,
                     ))
                     .child(diagnostic_item(
+                        "VSR 状态",
+                        &vsr.map_or("—".into(), |value| {
+                            if value.enabled {
+                                format!("质量 {}", quality_label(value.quality))
+                            } else {
+                                "关闭".into()
+                            }
+                        }),
+                        false,
+                    ))
+                    .child(diagnostic_item(
+                        "VSR 活动档位",
+                        &vsr
+                            .and_then(|value| value.active_quality)
+                            .map(quality_label)
+                            .unwrap_or_else(|| "无".into()),
+                        false,
+                    ))
+                    .child(diagnostic_item(
                         "允许的 SHA-256",
                         diagnostics
                             .map(|value| value.expected_sha256.as_str())
@@ -1350,6 +1803,20 @@ impl ConsoleApp {
                         "原始 0x318",
                         diagnostics
                             .and_then(|value| value.raw_hdr_hex.as_deref())
+                            .unwrap_or("—"),
+                        true,
+                    ))
+                    .child(diagnostic_item(
+                        "VSR 0x315",
+                        diagnostics
+                            .and_then(|value| value.raw_vsr_info_hex.as_deref())
+                            .unwrap_or("—"),
+                        true,
+                    ))
+                    .child(diagnostic_item(
+                        "VSR 0x317",
+                        diagnostics
+                            .and_then(|value| value.raw_vsr_value_hex.as_deref())
                             .unwrap_or("—"),
                         true,
                     )),
@@ -1372,9 +1839,9 @@ impl ConsoleApp {
         let connection = if self.connection_error.is_some() {
             "IPC 未连接 · 后台未运行"
         } else if self.compatibility_read_only() {
-            "HDR 0x318 · 只读兼容模式"
+            "HDR 0x318 + VSR 0x315 · 只读兼容模式"
         } else {
-            "HDR 0x318 · 后端已连接"
+            "HDR 0x318 + VSR 0x315 · 后端已连接"
         };
         let note = self
             .transient_error
@@ -1443,7 +1910,7 @@ impl ConsoleApp {
 
 fn format_diagnostic_text(snapshot: &UiSnapshot) -> String {
     let mut lines = vec![
-        "RTX HDR Switch diagnostics".to_string(),
+        "RTX Video Manager diagnostics".to_string(),
         format!("app_version={}", snapshot.app_version),
     ];
     let diagnostics = &snapshot.diagnostics;
@@ -1467,6 +1934,12 @@ fn format_diagnostic_text(snapshot: &UiSnapshot) -> String {
     if let Some(raw) = &diagnostics.raw_hdr_hex {
         lines.push(format!("raw_0x318={raw}"));
     }
+    if let Some(raw) = &diagnostics.raw_vsr_info_hex {
+        lines.push(format!("raw_0x315={raw}"));
+    }
+    if let Some(raw) = &diagnostics.raw_vsr_value_hex {
+        lines.push(format!("raw_0x317={raw}"));
+    }
     if let Some(last_error) = &diagnostics.last_error {
         lines.push(format!("last_error={last_error}"));
     }
@@ -1481,11 +1954,40 @@ fn format_diagnostic_text(snapshot: &UiSnapshot) -> String {
         lines.push(format!("contrast={}", hdr.contrast));
         lines.push(format!("saturation={}", hdr.saturation));
     }
+    if let UiVsrState::Ready(vsr) = &snapshot.vsr {
+        lines.push(format!("vsr_supported={}", vsr.supported));
+        lines.push(format!("vsr_enabled={}", vsr.enabled));
+        lines.push(format!("vsr_active={}", vsr.active));
+        lines.push(format!("vsr_quality={}", vsr.quality.raw()));
+        lines.push(format!("vsr_status={}", vsr.status));
+    }
     lines.join("\n")
 }
 
 impl Render for ConsoleApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content = match self.page {
+            UiPage::Overview => v_flex()
+                .w_full()
+                .gap_3()
+                .child(self.render_hero(cx))
+                .child(self.render_vsr_hero(cx))
+                .into_any_element(),
+            UiPage::Hdr => v_flex()
+                .w_full()
+                .gap_3()
+                .child(self.render_hero(cx))
+                .child(self.render_tuning(cx))
+                .into_any_element(),
+            UiPage::Vsr => v_flex()
+                .w_full()
+                .gap_3()
+                .child(self.render_vsr_hero(cx))
+                .child(self.render_vsr_quality(cx))
+                .into_any_element(),
+            UiPage::Settings => self.render_settings(cx).into_any_element(),
+            UiPage::Diagnostics => self.render_diagnostics(cx).into_any_element(),
+        };
         v_flex()
             .id("console-root")
             .track_focus(&self.focus_handle)
@@ -1500,20 +2002,16 @@ impl Render for ConsoleApp {
                     .flex_1()
                     .min_h(px(0.))
                     .px(px(28.))
-                    .pt(px(20.))
+                    .pt(px(14.))
                     .pb(px(14.))
                     .gap_3()
-                    .child(self.render_hero(cx))
-                    .child(if self.page == UiPage::Console {
-                        self.render_tuning(cx).into_any_element()
-                    } else {
-                        div().h(px(0.)).into_any_element()
-                    })
-                    .child(if self.page == UiPage::Diagnostics {
-                        self.render_diagnostics(cx).into_any_element()
-                    } else {
-                        self.render_settings(cx).into_any_element()
-                    })
+                    .child(self.render_tabs(cx))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_h(px(0.))
+                            .child(content),
+                    )
                     .child(self.render_footer(cx)),
             )
     }
@@ -1596,6 +2094,28 @@ fn diagnostic_item(label: &str, value: &str, wide: bool) -> impl IntoElement {
                 .truncate()
                 .child(value.to_string()),
         )
+}
+
+fn quality_label(quality: VsrQuality) -> &'static str {
+    match quality {
+        VsrQuality::Off => "关闭",
+        VsrQuality::Level1 => "1",
+        VsrQuality::Level2 => "2",
+        VsrQuality::Level3 => "3",
+        VsrQuality::Level4 => "4",
+        VsrQuality::Auto => "自动",
+    }
+}
+
+fn vsr_quality_id(quality: VsrQuality) -> &'static str {
+    match quality {
+        VsrQuality::Off => "vsr-off",
+        VsrQuality::Level1 => "vsr-level-1",
+        VsrQuality::Level2 => "vsr-level-2",
+        VsrQuality::Level3 => "vsr-level-3",
+        VsrQuality::Level4 => "vsr-level-4",
+        VsrQuality::Auto => "vsr-auto",
+    }
 }
 
 fn error_for_code(code: i32) -> &'static str {
@@ -1724,16 +2244,16 @@ fn main() {
             gpui_kit::init(cx);
             apply_visual_theme(cx);
             let window_options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(size(px(760.), px(756.)), cx)),
+                window_bounds: Some(WindowBounds::centered(size(px(860.), px(620.)), cx)),
                 is_resizable: false,
                 is_minimizable: true,
                 ..TitleBar::window_options()
             };
             gpui_kit::open_window(window_options, cx, move |window, cx| {
-                window.set_window_title("RTX HDR 控制台");
+                window.set_window_title("RTX Video Manager");
                 cx.new(|cx| ConsoleApp::new(initial_connection, window, cx))
             })
-            .expect("failed to open RTX HDR console");
+            .expect("failed to open RTX Video Manager");
         });
 
     unsafe { CloseHandle(mutex) };
@@ -1749,7 +2269,7 @@ fn log_line(text: &str) {
     };
     let directory = std::path::PathBuf::from(base).join("RtxHdrSwitch");
     let _ = std::fs::create_dir_all(&directory);
-    let path = directory.join("rtx-hdr-settings.log");
+    let path = directory.join("rtx-video-manager-console.log");
     if std::fs::metadata(&path)
         .map(|metadata| metadata.len() > 1_048_576)
         .unwrap_or(false)
@@ -1769,9 +2289,10 @@ fn log_line(text: &str) {
 mod tests {
     use super::{error_for_code, format_diagnostic_text, hotkey_from_keystroke};
     use gpui_kit::{Keystroke, Modifiers};
-    use rtx_hdr_switch::ipc::{DiagnosticsInfo, UiHdrState, UiSnapshot};
-    use rtx_hdr_switch::{
+    use rtx_video_manager::ipc::{DiagnosticsInfo, UiHdrState, UiSnapshot, UiVsrState};
+    use rtx_video_manager::{
         CompatibilityInfo, CompatibilityMode, HdrSnapshot, Hotkey, NVCPL_SHA256_HEX, Settings,
+        VsrQuality, VsrSnapshot,
     };
 
     fn stroke(modifiers: Modifiers, key: &str) -> Keystroke {
@@ -1825,7 +2346,7 @@ mod tests {
     #[test]
     fn formats_read_only_diagnostics_for_clipboard() {
         let snapshot = UiSnapshot {
-            protocol_version: 3,
+            protocol_version: 4,
             app_version: "test".into(),
             hdr: UiHdrState::Ready(HdrSnapshot {
                 supported: true,
@@ -1839,9 +2360,17 @@ mod tests {
                 contrast: 0,
                 saturation: 0,
             }),
+            vsr: UiVsrState::Ready(VsrSnapshot {
+                supported: true,
+                enabled: true,
+                active: false,
+                quality: VsrQuality::Level4,
+                active_quality: None,
+                status: 0,
+            }),
             settings: Settings::default(),
             hotkey_registered: true,
-            busy: false,
+            busy: None,
             diagnostics: DiagnosticsInfo {
                 nvcpl_path: Some(r"C:\NVIDIA\nvcpl.dll".into()),
                 expected_sha256: NVCPL_SHA256_HEX.into(),
@@ -1854,6 +2383,8 @@ mod tests {
                     reason: Some("hash changed".into()),
                 }),
                 raw_hdr_hex: Some("00010203".into()),
+                raw_vsr_info_hex: Some("0100000004000000".into()),
+                raw_vsr_value_hex: Some("04000000".into()),
                 last_error: Some("read only".into()),
             },
         };
@@ -1862,6 +2393,9 @@ mod tests {
         assert!(text.contains("compatibility=ReadOnlyUnknownBuild"));
         assert!(text.contains("actual_sha256=abcd"));
         assert!(text.contains("raw_0x318=00010203"));
+        assert!(text.contains("raw_0x315=0100000004000000"));
+        assert!(text.contains("raw_0x317=04000000"));
+        assert!(text.contains("vsr_quality=4"));
         assert!(text.contains("peak_range=400..1440"));
         assert!(text.contains("last_error=read only"));
     }

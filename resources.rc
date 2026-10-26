@@ -1,6 +1,6 @@
-1 ICON "assets/rtx-hdr-on.ico"
-101 ICON "assets/rtx-hdr-on.ico"
-102 ICON "assets/rtx-hdr-off.ico"
-103 ICON "assets/rtx-hdr-error.ico"
+1 ICON "assets/rtx-video-manager-on.ico"
+101 ICON "assets/rtx-video-manager-on.ico"
+102 ICON "assets/rtx-video-manager-off.ico"
+103 ICON "assets/rtx-video-manager-error.ico"
 
 1 24 "assets/app.manifest"

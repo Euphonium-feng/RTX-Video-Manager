@@ -2,8 +2,12 @@
 
 ## In Progress
 
-- Review and merge `feature/readonly-compatibility` after user approval; the branch
-  is intentionally not auto-merged.
+- `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
+  dual-function model, protocol version `4`, three-hotkey grouping, the five-page
+  GPUI console, and the new dual-channel product icon. The branch has not yet
+  completed a green GitHub Actions run or real-machine acceptance.
+- The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
+  been rendered and visually reviewed at 100% and 125% preview scales.
 
 ## Verified
 
@@ -81,6 +85,31 @@
 
 ## Pending
 
+- Push `feature/rtx-video-manager`, create a draft PR based on
+  `feature/readonly-compatibility`, and watch `cargo fmt`, Clippy, all tests, both
+  release builds, packaging, and upload with `gh run watch --exit-status`.
+- Download the green artifact and verify the renamed host and console launch, the
+  old HKCU settings remain readable, and only one `RtxHdrSwitch` startup value exists.
+- On the final artifact, verify `Ctrl+Alt+H`, `Ctrl+Alt+V`, and `Ctrl+Alt+G`, both
+  tray toggles, and console open/close behavior. Confirm a second console hotkey
+  press hides the active console.
+- In Chrome, verify VSR `status` changes while playback starts and stops, HDR and VSR
+  toggle independently, and the four HDR tuning fields remain unchanged by VSR writes.
+- Repeat the documented reversible VSR probe (`4 -> 3 -> 4`) only against the final
+  artifact path used for acceptance; do not substitute or modify the installed NVIDIA
+  DLL.
+- Verify read-only mode through automated compatibility tests and injected UI state.
+  A real unknown signed DLL is not available locally and must not be fabricated by
+  replacing NVIDIA files.
+- Inspect the taskbar, window, tray on/off/error states, and file icon after building.
+  Confirm the product renders as `RTX Video Manager` and uses the new video-frame icon.
+- Verify the updated 860 x 620 console at 100%, 125%, and 150% DPI, including overview,
+  HDR, VSR, settings, and diagnostics; confirm all quality and tuning ranges are visible,
+  read-only disables both write surfaces, and no phantom controls overlap adjacent rows.
+- Verify the 500 ms overlay text for HDR on/off and VSR on/off/quality, plus the
+  diagnostics copy button and both raw VSR data fields.
+- Record host idle memory/CPU, console startup time, console private memory, executable
+  sizes, and both SHA-256 hashes in this file after the final green run.
 - Verify the unknown-build read-only UI against a real unknown signed DLL when such a
   build is available. This phase intentionally did not replace the local NVIDIA file;
   classification, IPC, and disabled-write behavior are covered by automated tests.
@@ -106,4 +135,6 @@
 
 ## Next Action
 
-Review draft PR #1, inspect the review diff, and merge only after explicit approval.
+Commit and push `feature/rtx-video-manager`, open a draft PR against
+`feature/readonly-compatibility`, then watch the first run and fix every cloud-build
+failure before resuming artifact acceptance.

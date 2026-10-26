@@ -1,4 +1,4 @@
-use rtx_hdr_switch::ipc::{
+use rtx_video_manager::ipc::{
     decode, read_packet, write_packet, HostEvent, IpcError, UiCommand, UiError, PIPE_NAME,
     PROTOCOL_VERSION,
 };
@@ -55,7 +55,7 @@ pub fn start(hwnd: usize, message: u32) {
     STOP.store(false, Ordering::Release);
     *lock(&HOST) = Some(HostTarget { hwnd, message });
     thread::Builder::new()
-        .name("rtx-hdr-ipc".into())
+        .name("rtx-video-manager-ipc".into())
         .spawn(server_loop)
         .expect("failed to spawn IPC server thread");
 }

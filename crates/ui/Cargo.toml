@@ -1,19 +1,19 @@
 [package]
-name = "rtx-hdr-settings"
+name = "rtx-video-manager-console"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "GPUI control console for RTX Video HDR"
+description = "GPUI control console for RTX Video HDR and VSR"
 publish = false
 build = "build.rs"
 
 [[bin]]
-name = "RtxHdrSettings"
+name = "RtxVideoManagerConsole"
 path = "src/main.rs"
 
 [dependencies]
 gpui-kit = "=0.8.0"
-rtx-hdr-switch = { path = "../.." }
+rtx-video-manager = { path = "../.." }
 serde_json = "1"
 windows-sys = { version = "=0.59.0", features = [
     "Win32_Foundation",
