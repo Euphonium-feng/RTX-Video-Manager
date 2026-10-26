@@ -10,7 +10,6 @@
   <img alt="build" src="https://github.com/Euphonium-feng/RTX-HDR-Switch/actions/workflows/build.yml/badge.svg">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows11&logoColor=white">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Win32%20%2B%20GPUI-B7410E?style=for-the-badge&logo=rust&logoColor=white">
-  <img alt="No WebView" src="https://img.shields.io/badge/WebView-none-65DDE6?style=for-the-badge">
 </p>
 
 `Ctrl+Alt+H` 切换 · `Ctrl+Alt+G` 唤起/收起控制台 · 500 ms 半透明浮层 · 严格回滚事务
@@ -23,21 +22,18 @@
 
 ## 为什么要做这个工具？
 
-RTX Video HDR 对真人电影、HDR 预告片和游戏实机画面很有吸引力，但它不是万能滤镜。
+RTX Video HDR 不是万能滤镜。
 2D 动画、动态图形、AE 合成、大面积纯白背景和强 UI 画面经常会被“提亮过头”：
 
 - 白色字幕和小图形出现过曝或边缘发灰。
 - 原本平面的动画出现不自然的明暗层次。
 - 对比度被拉高后，线稿和色块不再干净。
-- 去 NVIDIA App 里翻 `System → Video → HDR`，再切回 Chrome，操作链太长。
+- 去 NVIDIA App 里翻 `System → Video → HDR`，再切回播放器，太过繁琐。
 
 这就不合理了。一个高频、瞬时、情境化的视觉判断，不应该要求你离开视频页面、
 找到显卡控制面板、翻开多层设置，然后再回来继续看。
 
 > **核心痛点：HDR 是否合适是“逐视频”的，但开关入口却是“系统级”的。**
-
-RTX HDR Switch 不尝试猜测内容类型，也不做脆弱的自动分类。它把判断权留给你，
-把操作成本压到一次快捷键。
 
 ---
 
@@ -214,55 +210,6 @@ flowchart TB
 宿主**不链接 GPUI**。只有你真正打开控制台时才启动渲染器，所以每次按快捷键都不会
 拉起 GPU 窗口，也不会把渲染内存长期挂在后台。
 
-### 本地 IPC
-
-- 当前用户命名管道：`\\.\pipe\RtxHdrSwitch.Settings.v1`
-- 拒绝远程客户端。
-- 校验客户端进程 SID 与会话 ID。
-- 协议版本明确为 `1`。
-- 4 字节小端长度前缀 + UTF-8 JSON。
-- 单帧上限 64 KiB。
-- **每个连接只有一个线程拥有全部管道 I/O**，避免同步句柄上并发读写导致卡死。
-
----
-
-## “校准仪表盘”设计语言
-
-不是通用后台，也不是堆卡片的设置页。界面参考硬件监看器和校准台：
-
-- 石墨圆角底板、断裂的冰蓝校准环、白色 `H` 和琥珀色刻度组成产品图标。
-- 石墨黑底保留视频周边的低干扰环境。
-- 冰蓝色表达“实时信号 / 可操作”。
-- 琥珀色只用于录制、校准刻度和注意状态。
-- 珊瑚色只用于不可用与错误。
-- Bahnschrift 负责数字与仪表标题，Microsoft YaHei UI 负责中文信息层级。
-- 动效只在状态切换时出现，不做持续闪烁和无意义装饰。
-
-<p align="center">
-  <img src="assets/rtx-hdr-console.png" width="128" alt="RTX HDR Console product icon">
-</p>
-
-图标以 [`assets/rtx-hdr-console.svg`](assets/rtx-hdr-console.svg) 为可编辑母版，并导出
-16–256 px 多尺寸 ICO 编进 `RtxHdrSettings.exe`；运行时不需要旁边再放图片文件。
-
-<details>
-<summary><strong>视觉令牌</strong></summary>
-
-| Token | Value | 用途 |
-| --- | --- | --- |
-| Ink | `#0B1215` | 主背景 |
-| Panel | `#121C20` | 仪表面板 |
-| Raised | `#19262C` | 控件与键帽 |
-| Rule | `#2A4046` | 分隔与边框 |
-| Text | `#EDF5F4` | 正文 |
-| Muted | `#8CA1A5` | 次要说明 |
-| Signal | `#65DDE6` | 实时信号 |
-| Warm | `#F0B35C` | 录制 / 警告 |
-| Danger | `#FF7B70` | 错误 |
-
-</details>
-
----
 
 ## 兼容状态
 
@@ -306,129 +253,5 @@ flowchart TB
 
 ---
 
-## 项目结构
-
-```text
-RTX-HDR-Switch/
-├─ src/
-│  ├─ lib.rs             # 领域类型、HDR 编解码与回滚事务
-│  ├─ ipc.rs             # 版本化 DTO 与帧协议
-│  ├─ host_ipc.rs        # 命名管道服务 / 身份校验 / 单线程 I/O
-│  └─ main.rs            # Win32 宿主、托盘、热键、NVIDIA worker
-├─ crates/ui/            # GPUI 控制台 RtxHdrSettings.exe
-├─ assets/               # 图标、清单与资源
-├─ prototype/            # HTML/CSS 视觉原型
-├─ docs/                 # 五份长期项目文档
-└─ .github/workflows/    # Windows 云端构建与打包
-```
-
----
-
-## 构建与验证
-
-本机不要求 Rust/MSVC。构建、格式检查、Clippy、测试和打包全部交给 GitHub Actions
-的 `windows-latest`。
-
-```text
-cargo fmt --all -- --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace
-cargo build --locked --release --target x86_64-pc-windows-msvc -p rtx-hdr-switch --bin RtxHdrSwitch
-cargo build --locked --profile ui-release --target x86_64-pc-windows-msvc -p rtx-hdr-settings --bin RtxHdrSettings
-```
-
-只有当 `gh run watch --exit-status` 成功退出，构建才算通过。
-
-### 验收清单
-
-- [x] NVIDIA `0x318` 可逆切换与 Chrome `hdrStatus` 变化
-- [x] 峰值、范围、中间灰、对比度、饱和度保持不变
-- [x] 全局热键注册与 300 ms 内重复触发抑制
-- [x] 托盘图标、菜单与 Explorer 重建
-- [x] 单实例打开控制台
-- [x] GPUI 控制台握手、快照和快捷键录制路径
-- [x] 四项 HDR 调校写入、逐项回读与恢复原始值
-- [x] `Ctrl+Alt+G` 唤起控制台的热键注册与真实按键验证
-- [x] 控制台产品图标嵌入与 EXE 关联图标复核
-- [x] 关闭控制台后释放辅助进程
-- [ ] 500 ms 浮层在最终图标构建上的人工视觉复核
-- [ ] 无 HDR 显示器 / Windows HDR 关闭 / Surround 冲突的人工复测
-
----
-
-## 已知边界
-
-- 不自动识别动画、白底或内容类型；开关仍是用户判断。
-- 不支持 Windows HDR 模式切换。
-- 不支持 RTX Video Super Resolution 控制。
-- 不修改 NVIDIA 注册表，不做 UI 自动化。
-- 不承诺第三方修改版 `nvcpl.dll` 兼容。
-- 当前为私有项目，未声明开源许可证。
-- 发布包必须保留两个 EXE 在同一目录。
-
-### 明确不做
-
-```text
-Chrome 扩展      ❌
-CSS 视频滤镜     ❌
-WebView 前端     ❌
-Tauri            ❌
-内容自动分类     ❌
-驱动注册表魔改   ❌
-NVIDIA App 点击  ❌
-```
-
----
-
-## 常见问题
-
-<details>
-<summary><strong>`1440 nits` 是写死的吗？</strong></summary>
-
-不是。它是宿主通过 NVIDIA `0x318` 读取到的当前峰值亮度，旁边的最小/最大值也来自驱动。
-不同显示器或 HDR 配置会得到不同的数值和可选区间。
-
-</details>
-
-<details>
-<summary><strong>为什么快捷键有反馈，但控制台显示不可用？</strong></summary>
-
-宿主、快捷键和 NVIDIA 事务是独立路径。控制台通过 IPC 读取宿主快照；如果 DLL、
-签名、UXD 服务或显示状态不满足条件，宿主仍可工作，但 HDR 写入会被门禁拒绝。
-
-</details>
-
-<details>
-<summary><strong>为什么关闭控制台后托盘还在？</strong></summary>
-
-这是设计目标。常驻宿主负责托盘、热键、自启和 HDR；GPUI 只在需要看设置和诊断时启动。
-
-</details>
-
-<details>
-<summary><strong>为什么不直接修改注册表？</strong></summary>
-
-注册表值不等于 NVIDIA UXD 的完整事务状态。这个项目沿用 NVIDIA App 的
-Set + Execute + 回读路径，并有原始字节回滚。
-
-</details>
-
-<details>
-<summary><strong>为什么 NVIDIA App 更新后可能不能切换？</strong></summary>
-
-私有 ABI 没有稳定性承诺。程序锁定了已验证的文件哈希；变化后会自动进入只读，
-避免用错误布局写坏设置。
-
-</details>
-
----
-
-<div align="center">
-
-**Less panel archaeology. More watching.**
-
-`Ctrl+Alt+H` 切换 · `Ctrl+Alt+G` 控制台
-
-项目细节见 [`docs/`](docs/) · 视觉原型见 [`prototype/gpui-console.html`](prototype/gpui-console.html)
 
 </div>
