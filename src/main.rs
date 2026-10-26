@@ -367,9 +367,9 @@ impl NvBackend {
         };
         let raw = backend.read_hdr_bytes()?;
         parse_hdr_info(&raw)?;
-        let vsr_info = backend.read_vsr_info()?;
+        let vsr_info = backend.read_vsr_info_bytes()?;
         let vsr = parse_vsr_info(&vsr_info)?;
-        let vsr_value = backend.read_vsr_value()?;
+        let vsr_value = backend.read_vsr_value_bytes()?;
         if parse_vsr_value(&vsr_value)? != vsr.quality {
             return Err(AppError::InvalidData("VSR 设置值与状态不一致"));
         }
@@ -423,7 +423,7 @@ impl NvBackend {
         Ok(())
     }
 
-    unsafe fn read_vsr_info(&self) -> Result<[u8; VSR_INFO_SIZE], AppError> {
+    unsafe fn read_vsr_info_bytes(&self) -> Result<[u8; VSR_INFO_SIZE], AppError> {
         let mut raw = [0u8; VSR_INFO_SIZE];
         let context = 0u64;
         let code = (self.get_setting)(
@@ -439,7 +439,7 @@ impl NvBackend {
         Ok(raw)
     }
 
-    unsafe fn read_vsr_value(&self) -> Result<[u8; VSR_VALUE_SIZE], AppError> {
+    unsafe fn read_vsr_value_bytes(&self) -> Result<[u8; VSR_VALUE_SIZE], AppError> {
         let mut raw = [0u8; VSR_VALUE_SIZE];
         let context = 0u64;
         let code = (self.get_setting)(
@@ -455,7 +455,7 @@ impl NvBackend {
         Ok(raw)
     }
 
-    unsafe fn write_vsr_value(&self, raw: &[u8; VSR_VALUE_SIZE]) -> Result<(), AppError> {
+    unsafe fn write_vsr_value_bytes(&self, raw: &[u8; VSR_VALUE_SIZE]) -> Result<(), AppError> {
         if !self.compatibility.is_writable() {
             return Err(AppError::ReadOnlyCompatibility);
         }
@@ -499,15 +499,15 @@ impl NvTransport for NvBackend {
 
 impl VsrTransport for NvBackend {
     fn read_vsr_info(&mut self) -> Result<[u8; VSR_INFO_SIZE], AppError> {
-        unsafe { self.read_vsr_info() }
+        unsafe { self.read_vsr_info_bytes() }
     }
 
     fn read_vsr_value(&mut self) -> Result<[u8; VSR_VALUE_SIZE], AppError> {
-        unsafe { self.read_vsr_value() }
+        unsafe { self.read_vsr_value_bytes() }
     }
 
     fn write_vsr_value(&mut self, value: &[u8; VSR_VALUE_SIZE]) -> Result<(), AppError> {
-        unsafe { self.write_vsr_value(value) }
+        unsafe { self.write_vsr_value_bytes(value) }
     }
 }
 
@@ -1563,9 +1563,9 @@ fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
                     let backend = backend.as_ref().unwrap();
                     let hdr_raw = unsafe { backend.read_hdr_bytes()? };
                     let hdr = parse_hdr_info(&hdr_raw)?;
-                    let vsr_info_raw = unsafe { backend.read_vsr_info()? };
+                    let vsr_info_raw = unsafe { backend.read_vsr_info_bytes()? };
                     let vsr = parse_vsr_info(&vsr_info_raw)?;
-                    let vsr_value_raw = unsafe { backend.read_vsr_value()? };
+                    let vsr_value_raw = unsafe { backend.read_vsr_value_bytes()? };
                     if parse_vsr_value(&vsr_value_raw)? != vsr.quality {
                         return Err(AppError::InvalidData("VSR 设置值与状态不一致"));
                     }
