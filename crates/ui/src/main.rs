@@ -1317,11 +1317,11 @@ impl ConsoleApp {
     }
 
     fn render_video_info(&self) -> impl IntoElement {
-        let active = self
-            .vsr_ready()
-            .is_some_and(|vsr| vsr.active)
-            .then_some("正在处理兼容视频")
-            .unwrap_or("等待兼容视频");
+        let active = if self.vsr_ready().is_some_and(|vsr| vsr.active) {
+            "正在处理兼容视频"
+        } else {
+            "等待兼容视频"
+        };
         let active_quality = self
             .vsr_ready()
             .and_then(|vsr| vsr.active_quality)
