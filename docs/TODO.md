@@ -7,8 +7,8 @@
   GPUI console, and the new dual-channel product icon.
 - Real-machine review found that the GPUI console is functionally connected but its
   visual density and hierarchy are still weaker than `prototype/rtx-video-manager.html`.
-  The overview is being changed to side-by-side HDR/VSR cards with a status rail, and
-  the HDR/VSR pages are gaining matching right-side information cards.
+  The overview now uses side-by-side HDR/VSR cards with a status rail, and the
+  HDR/VSR pages have matching right-side information cards.
 - The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
   been rendered and visually reviewed at 100% and 125% preview scales.
 - GitHub Actions run `40357825705` is green for commit `9d8ebc2`; strict
@@ -27,6 +27,22 @@
   footer. Its real-machine screenshot was reviewed after the layout change.
 - The HTML prototype navigation bug was fixed by adding `#page-hdr[hidden]`; all five
   pages were verified not to be covered by the HDR page.
+- GitHub Actions run `40365737946` is green for commit `f25481b`; strict formatting,
+  Clippy, all tests, both Release builds, packaging, and upload passed.
+- Visual artifact ZIP SHA-256 is
+  `8887B47C81FA66E633FD40B1CC569B106CEA0CC3EEF893637BB8DFC79CC397A8`;
+  host SHA-256 is
+  `433825645BA5F5F8533FD9D13AC6968FD456182C4531B7A6DAD5FF1FEDC37DFD`
+  (656,384 bytes); console SHA-256 is
+  `4832E37BEF218B2F7C0E97C7A2FE69847524DAF0E72AC4F4B211C547552AF6B9`
+  (17,789,952 bytes).
+- A DPI-aware, off-screen background capture of the final overview at 125% scaling
+  confirmed that both cards fit, the HDR spectrum and VSR ladder are visible, the
+  summary rail is not clipped, and the footer remains fixed. The checked-in preview is
+  `prototype/gpui-overview-125.png`.
+- The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
+  approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
+  optimization rather than a blocker for visual acceptance.
 
 ## Verified
 
@@ -104,13 +120,10 @@
 
 ## Pending
 
-- Rebuild and review the GPUI overview/HDR/VSR visual-parity changes after the next
-  green cloud run. Compare directly with the HTML prototype at 100%, 125%, and 150%.
-- Remove the temporary foreground review window after visual acceptance. Background
-  host/tray verification must remain uninterrupted.
-- Push `feature/rtx-video-manager`, create a draft PR based on
-  `feature/readonly-compatibility`, and watch `cargo fmt`, Clippy, all tests, both
-  release builds, packaging, and upload with `gh run watch --exit-status`.
+- Capture and review the final HDR/VSR detail pages through the same off-screen
+  background method at 125%, then repeat overview/detail spot checks at 100% and 150%.
+- Keep the GPUI console hidden or off-screen during acceptance. Do not activate a
+  foreground review window while the user is working.
 - Download the green artifact and verify the renamed host and console launch, the
   old HKCU settings remain readable, and only one `RtxHdrSwitch` startup value exists.
 - On the final artifact, verify `Ctrl+Alt+H`, `Ctrl+Alt+V`, and `Ctrl+Alt+G`, both
@@ -158,6 +171,6 @@
 
 ## Next Action
 
-Commit and push `feature/rtx-video-manager`, open a draft PR against
-`feature/readonly-compatibility`, then watch the first run and fix every cloud-build
-failure before resuming artifact acceptance.
+Continue background acceptance on the green `f25481b` artifact: review HDR/VSR detail
+layout without activating the window, then exercise three hotkeys, both toggles, and
+VSR active-state changes.
