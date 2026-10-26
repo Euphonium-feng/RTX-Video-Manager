@@ -1002,9 +1002,6 @@ impl ConsoleApp {
         let peak_range = hdr.map_or("—".into(), |hdr| {
             format!("{} – {} nits", hdr.peak_min, hdr.peak_max)
         });
-        let peak_value = self.hdr_draft.as_ref().map_or("—".into(), |draft| {
-            format!("{} nits", draft.peak_brightness)
-        });
         let disabled = !self.hdr_dirty || !self.can_tune() || self.tuning_saving;
 
         v_flex()
@@ -1119,15 +1116,6 @@ impl ConsoleApp {
                                 "−100 – +100".into(),
                             )),
                     ),
-            )
-            .child(
-                div()
-                    .font_family("Cascadia Mono")
-                    .text_size(px(9.))
-                    .text_color(rgb(SUBTLE))
-                    .child(format!(
-                        "当前峰值 {peak_value} · 写入后逐项回读，失败自动回滚"
-                    )),
             )
     }
 
