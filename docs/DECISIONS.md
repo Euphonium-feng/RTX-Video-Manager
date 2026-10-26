@@ -61,6 +61,9 @@ only while the control console is open. The console communicates with the host o
 a one-client, same-user named pipe; it never loads NvCpl or writes registry values.
 Tray, hotkey registration, and the 500 ms overlay stay native because GPUI has no
 tray API and spawning a renderer for every shortcut would add latency and memory.
+All major console surfaces share the same rounded panel treatment. On the HDR page,
+the tuning panel flexes into the remaining height and keeps a bottom status line, so
+its rounded lower corners stay visible above the footer instead of being clipped.
 
 Rejected: putting GPUI in the resident host, implementing a WebView/Tauri console,
 or replacing native system chrome with per-toggle GPUI windows.

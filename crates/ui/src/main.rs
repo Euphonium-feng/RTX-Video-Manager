@@ -1476,11 +1476,18 @@ impl ConsoleApp {
         let peak_range = hdr.map_or("—".into(), |hdr| {
             format!("驱动范围 {} – {} nits", hdr.peak_min, hdr.peak_max)
         });
+        let status_line = hdr.map_or("等待 NVIDIA HDR 状态".into(), |hdr| {
+            format!(
+                "当前峰值 {} nits · 写入后逐项回读，失败自动恢复",
+                hdr.peak_brightness
+            )
+        });
         let disabled = !self.hdr_dirty || !self.can_tune() || self.tuning_saving;
 
         v_flex()
             .w_full()
-            .h(px(234.))
+            .flex_1()
+            .min_h(px(234.))
             .flex_shrink_0()
             .gap_3()
             .p_4()
@@ -1590,6 +1597,14 @@ impl ConsoleApp {
                                 "−100 – +100".into(),
                             )),
                     ),
+            )
+            .child(
+                div()
+                    .mt_auto()
+                    .font_family("Cascadia Mono")
+                    .text_size(px(9.))
+                    .text_color(rgb(SUBTLE))
+                    .child(status_line),
             )
     }
 
@@ -1975,6 +1990,7 @@ impl Render for ConsoleApp {
                 .into_any_element(),
             UiPage::Hdr => v_flex()
                 .w_full()
+                .h_full()
                 .gap_3()
                 .child(self.render_hero(cx))
                 .child(self.render_tuning(cx))

@@ -136,6 +136,15 @@
     }
     .page { height: 100%; animation: reveal .16s ease-out both; }
     .page[hidden] { display: none; }
+    #page-hdr { display: flex; flex-direction: column; gap: 12px; }
+    #page-hdr[hidden] { display: none; }
+    #page-hdr .split { flex: 0 0 auto; }
+    #page-hdr .tuning-panel {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
     @keyframes reveal {
       from { opacity: 0; transform: translateY(3px); }
       to { opacity: 1; transform: translateY(0); }
@@ -457,7 +466,7 @@
             <div class="diag" style="margin-top:12px"><span>NVCpl</span><code>8.17.15.5527</code></div>
           </aside>
         </div>
-        <div class="panel" style="margin-top:12px;height:248px">
+        <div class="panel tuning-panel">
           <div class="panel-heading"><h2>HDR 调校</h2><span class="micro">NVIDIA 0x318 · 独立应用</span></div>
           <div class="tuning-grid">
             <div class="field"><label><span>峰值亮度</span><b>1440 nits</b></label><div class="meter"><i style="width:100%"></i></div><div class="range"><span>400</span><span>1440</span></div></div>
@@ -465,6 +474,7 @@
             <div class="field"><label><span>中间灰</span><b>50</b></label><div class="meter"><i style="width:50%"></i></div><div class="range"><span>0</span><span>100</span></div></div>
             <div class="field"><label><span>饱和度</span><b>0</b></label><div class="meter"><i style="width:50%"></i></div><div class="range"><span>−100</span><span>+100</span></div></div>
           </div>
+          <div class="range" style="margin-top:auto"><span>当前峰值 1440 nits · 写入后逐项回读，失败自动回滚</span></div>
         </div>
       </section>
 

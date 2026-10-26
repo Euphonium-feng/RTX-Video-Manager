@@ -56,6 +56,8 @@ RTX Video Super Resolution (VSR) without opening NVIDIA App. The product name is
 - Idle private working set is below 15 MiB and idle CPU is effectively zero.
 - Closing the console terminates the GPUI process; tray and shortcut behavior remain.
 - The console title bar exposes minimize and close only; maximize is not offered.
+- The HDR tuning card fills the remaining page height as one rounded surface; it must
+  not leave an unwrapped strip above the footer or clip its lower corners.
 - The release archive contains `RtxVideoManager.exe` and
   `RtxVideoManagerConsole.exe` together.
 - `RtxVideoManagerConsole.exe` displays its embedded product icon in Windows shell surfaces

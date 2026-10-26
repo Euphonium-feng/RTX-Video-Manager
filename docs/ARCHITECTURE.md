@@ -78,6 +78,10 @@ mode, actual and allowed hashes, optional DLL file version, probe result, and re
 The console shows those values in its diagnostics page and can copy a stable text
 report to the clipboard without contacting the host again.
 
+The HDR page uses a full-height page container. Its hero keeps a fixed height while
+the tuning card grows into the remaining space, preserves the shared 14 px corner
+radius and border, and ends above the footer instead of leaving an unwrapped strip.
+
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update
 the local draft, and the console may refresh/read diagnostics. A hotkey attempt shows
