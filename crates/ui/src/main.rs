@@ -1321,13 +1321,6 @@ impl ConsoleApp {
             .child(info_value("兼容模式", mode))
             .child(info_value("NVCpl 版本", version))
             .child(info_value("读取探针", probe))
-            .child(
-                div()
-                    .mt_auto()
-                    .text_size(px(9.))
-                    .text_color(rgb(SUBTLE))
-                    .child("完整哈希与原始数据见诊断"),
-            )
     }
 
     fn render_video_info(&self) -> impl IntoElement {
@@ -1375,13 +1368,6 @@ impl ConsoleApp {
             .child(info_value("处理状态", active))
             .child(info_value("活动档位", active_quality))
             .child(info_value("启用档位", selected_quality))
-            .child(
-                div()
-                    .mt_auto()
-                    .text_size(px(9.))
-                    .text_color(rgb(SUBTLE))
-                    .child("播放兼容视频时由驱动实时更新"),
-            )
     }
 
     fn render_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
