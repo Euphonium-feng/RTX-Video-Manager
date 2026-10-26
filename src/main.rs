@@ -2500,14 +2500,30 @@ unsafe fn signer_organization_from_message(
     message: *mut c_void,
     encoding: u32,
 ) -> Result<String, AppError> {
-    let mut cert_info: CERT_INFO = zeroed();
-    let mut cert_info_size = size_of::<CERT_INFO>() as u32;
+    let mut cert_info_size = 0u32;
     if CryptMsgGetParam(
         message,
         CMSG_SIGNER_CERT_INFO_PARAM,
         0,
-        (&mut cert_info as *mut CERT_INFO).cast(),
+        null_mut(),
         &mut cert_info_size,
+    ) == 0
+        || cert_info_size < size_of::<CERT_INFO>() as u32
+    {
+        return Err(AppError::SignatureInvalid);
+    }
+
+    let word_size = size_of::<u64>();
+    let words = (cert_info_size as usize).div_ceil(word_size);
+    let mut cert_info_buffer = vec![0u64; words];
+    let cert_info = cert_info_buffer.as_mut_ptr().cast::<CERT_INFO>();
+    let mut written = cert_info_size;
+    if CryptMsgGetParam(
+        message,
+        CMSG_SIGNER_CERT_INFO_PARAM,
+        0,
+        cert_info.cast(),
+        &mut written,
     ) == 0
     {
         return Err(AppError::SignatureInvalid);
@@ -2518,7 +2534,7 @@ unsafe fn signer_organization_from_message(
         encoding,
         0,
         CERT_FIND_SUBJECT_CERT,
-        (&cert_info as *const CERT_INFO).cast(),
+        cert_info.cast(),
         null(),
     );
     if cert.is_null() {
