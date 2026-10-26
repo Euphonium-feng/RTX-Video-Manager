@@ -65,6 +65,7 @@ impl CompatibilityInfo {
 pub struct ToggleOutcome {
     pub before: HdrSnapshot,
     pub after: HdrSnapshot,
+    pub raw: [u8; HDR_INFO_SIZE],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -99,6 +100,7 @@ impl HdrAdjustments {
 pub struct TuningOutcome {
     pub before: HdrSnapshot,
     pub after: HdrSnapshot,
+    pub raw: [u8; HDR_INFO_SIZE],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -333,6 +335,10 @@ pub fn classify_compatibility(
     })
 }
 
+pub fn is_nvidia_signer_organization(organization: &str) -> bool {
+    organization.trim().eq_ignore_ascii_case("NVIDIA Corporation")
+}
+
 pub fn validate_hdr_adjustments(
     snapshot: &HdrSnapshot,
     adjustments: &HdrAdjustments,
@@ -401,7 +407,11 @@ pub fn toggle_with_transport<T: NvTransport>(transport: &mut T) -> Result<Toggle
         }
     };
     if after.enabled == desired && persistent_fields_equal(&before, &after) {
-        return Ok(ToggleOutcome { before, after });
+        return Ok(ToggleOutcome {
+            before,
+            after,
+            raw: after_raw,
+        });
     }
 
     recover_after_error(transport, &original, &before, AppError::VerificationFailed)
@@ -446,7 +456,11 @@ pub fn tune_with_transport<T: NvTransport>(
         }
     };
     if tuning_matches(&before, &after, adjustments) {
-        return Ok(TuningOutcome { before, after });
+        return Ok(TuningOutcome {
+            before,
+            after,
+            raw: after_raw,
+        });
     }
 
     recover_tuning_after_error(transport, &original, &before, AppError::VerificationFailed)
@@ -709,6 +723,14 @@ mod tests {
             classify_compatibility(false, true, false),
             Err(AppError::InvalidData("HDR 读取探针未通过"))
         );
+    }
+
+    #[test]
+    fn accepts_only_nvidia_signer_organization() {
+        assert!(is_nvidia_signer_organization("NVIDIA Corporation"));
+        assert!(is_nvidia_signer_organization("  nvidia corporation "));
+        assert!(!is_nvidia_signer_organization("NVIDIA"));
+        assert!(!is_nvidia_signer_organization("Example Corporation"));
     }
 
     #[test]

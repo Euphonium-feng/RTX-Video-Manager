@@ -2,8 +2,9 @@
 
 ## In Progress
 
-- Validate the DPI-corrected console build and finish the remaining manual state
-  matrix.
+- Finish final verification of `feature/readonly-compatibility`: strict formatting,
+  green PR build, artifact hashes, verified-hash write smoke test, and diagnostics
+  screenshot.
 
 ## Verified
 
@@ -50,9 +51,22 @@
   windows close, background windows activate. Final artifact verification remains.
 - The runnable calibration-dashboard prototype is in `prototype/gpui-console.html`
   and has been rendered at 800 x 760 for visual review.
+- `feature/readonly-compatibility` implements unknown-build read-only mode, protocol
+  version `3`, compatibility diagnostics, raw `0x318` reporting, and disabled write
+  controls. The host rejects tray, hotkey, IPC, and legacy-window writes before the
+  worker queue when the mode is read-only.
+- GitHub Actions run `40300042727` is green for commit `7aa7e9f`; it validated the
+  first read-only compatibility implementation. It is an intermediate build, not the
+  final artifact for this branch.
 
 ## Pending
 
+- Push the signer-organization, diagnostics-refresh, documentation, and strict
+  formatting changes, then watch the final PR run with `gh run watch --exit-status`.
+- Download the final green artifact and record both executable SHA-256 values.
+- Run one reversible HDR tuning probe with the verified local DLL to confirm the
+  writable path has no regression, then confirm the console still reads and displays
+  compatibility diagnostics at 125% DPI.
 - Rebuild and visually verify the DPI-corrected console at the reference 125% scale;
   confirm the removed hero meter, visible ranges for all four controls, always-default
   `还原`, and absent maximize control.
@@ -72,5 +86,5 @@
 
 ## Next Action
 
-Push the DPI and UX corrections, wait for green CI, then download the artifact and run
-the remaining manual state matrix plus the 500 ms overlay visual check.
+Commit and push the final compatibility changes, wait for a green PR run, then
+download and verify the artifact with the local verified-hash DLL.

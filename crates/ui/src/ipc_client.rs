@@ -165,10 +165,7 @@ fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sende
                 let _ = events.send(ClientEvent::Connected);
             }
             Ok(event) if greeted => {
-                if events
-                    .send(ClientEvent::Event(Box::new(event)))
-                    .is_err()
-                {
+                if events.send(ClientEvent::Event(Box::new(event))).is_err() {
                     return;
                 }
             }

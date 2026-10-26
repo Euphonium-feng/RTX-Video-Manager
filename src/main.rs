@@ -7,11 +7,11 @@ use rtx_hdr_switch::ipc::{
     DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot,
 };
 use rtx_hdr_switch::{
-    classify_compatibility, format_hotkey, hex_lower, parse_hdr_info, sha256_hex,
-    toggle_with_transport, tune_with_transport, AppError, CompatibilityInfo, CompatibilityMode,
-    HdrAdjustments, HdrSnapshot, Hotkey, NvTransport, Settings, ToggleOutcome, TuningOutcome,
-    HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH,
-    NVCPL_SHA256_HEX,
+    classify_compatibility, format_hotkey, hex_lower, is_nvidia_signer_organization,
+    parse_hdr_info, sha256_hex, toggle_with_transport, tune_with_transport, AppError,
+    CompatibilityInfo, CompatibilityMode, HdrAdjustments, HdrSnapshot, Hotkey, NvTransport,
+    Settings, ToggleOutcome, TuningOutcome, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT, MOD_CONTROL,
+    MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH, NVCPL_SHA256_HEX,
 };
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -31,11 +31,22 @@ use windows_sys::Win32::Foundation::{
     WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi as gdi;
+use windows_sys::Win32::Security::Cryptography::{
+    szOID_ORGANIZATION_NAME, CertCloseStore, CertFindCertificateInStore,
+    CertFreeCertificateContext, CertGetNameStringW, CryptMsgClose, CryptMsgGetParam,
+    CryptQueryObject, CERT_FIND_SUBJECT_CERT, CERT_INFO, CERT_NAME_ATTR_TYPE,
+    CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED, CERT_QUERY_FORMAT_FLAG_BINARY,
+    CERT_QUERY_OBJECT_FILE, CMSG_SIGNER_CERT_INFO_PARAM,
+};
 use windows_sys::Win32::Security::WinTrust::{
     WinVerifyTrust, WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_FILE_INFO,
     WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE, WTD_REVOCATION_CHECK_NONE, WTD_REVOKE_NONE,
     WTD_SAFER_FLAG, WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY, WTD_UICONTEXT_EXECUTE,
     WTD_UI_NONE,
+};
+use windows_sys::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FFI_SIGNATURE,
+    VS_FIXEDFILEINFO,
 };
 use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryExW};
@@ -44,10 +55,6 @@ use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 use windows_sys::Win32::System::Threading::CreateMutexW;
-use windows_sys::Win32::Storage::FileSystem::{
-    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
-    VS_FFI_SIGNATURE,
-};
 use windows_sys::Win32::UI::Controls::BST_CHECKED;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -383,7 +390,6 @@ impl NvBackend {
         }
         Ok(())
     }
-
 }
 
 impl Drop for NvBackend {
@@ -1159,30 +1165,35 @@ unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
             read_only = true;
             None
         } else {
-        if from_hotkey && state.settings_window != 0 {
-            return;
-        }
-        if state.busy {
-            return;
-        }
-        if state
-            .last_toggle
-            .is_some_and(|last| last.elapsed().as_millis() < 300)
-        {
-            return;
-        }
-        if state.worker_tx.is_none() {
-            return;
-        }
-        state.busy = true;
-        state.last_toggle = Some(Instant::now());
-        state.worker_tx.clone()
+            if from_hotkey && state.settings_window != 0 {
+                return;
+            }
+            if state.busy {
+                return;
+            }
+            if state
+                .last_toggle
+                .is_some_and(|last| last.elapsed().as_millis() < 300)
+            {
+                return;
+            }
+            if state.worker_tx.is_none() {
+                return;
+            }
+            state.busy = true;
+            state.last_toggle = Some(Instant::now());
+            state.worker_tx.clone()
         }
     } else {
         None
     };
     if read_only {
-        show_balloon(hwnd, "RTX 视频 HDR", AppError::ReadOnlyCompatibility.user_message().as_str(), true);
+        show_balloon(
+            hwnd,
+            "RTX 视频 HDR",
+            AppError::ReadOnlyCompatibility.user_message().as_str(),
+            true,
+        );
         return;
     }
     if let Some(sender) = sender {
@@ -1388,6 +1399,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                         Ok(outcome) => {
                             let hdr_enabled = outcome.after.enabled;
                             state.hdr = HdrUi::Ready(outcome.after);
+                            state.last_hdr_raw = Some(hex_lower(&outcome.raw));
                             state.last_error = None;
                             let text = if hdr_enabled {
                                 "RTX 视频 HDR 已开启".to_string()
@@ -1454,6 +1466,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
                     match result {
                         Ok(outcome) => {
                             state.hdr = HdrUi::Ready(outcome.after);
+                            state.last_hdr_raw = Some(hex_lower(&outcome.raw));
                             state.last_error = None;
                             (true, None)
                         }
@@ -2374,13 +2387,7 @@ unsafe fn file_version(path: &Path) -> Option<String> {
         return None;
     }
     let mut data = vec![0u32; (size as usize).div_ceil(size_of::<u32>())];
-    if GetFileVersionInfoW(
-        path_wide.as_ptr(),
-        0,
-        size,
-        data.as_mut_ptr().cast(),
-    ) == 0
-    {
+    if GetFileVersionInfoW(path_wide.as_ptr(), 0, size, data.as_mut_ptr().cast()) == 0 {
         return None;
     }
     let root = wide(r"\");
@@ -2445,13 +2452,108 @@ unsafe fn verify_nvidia_signature(path: &Path) -> Result<(), AppError> {
         &mut data as *mut WINTRUST_DATA as *mut c_void,
     );
 
-    if status == 0 {
-        // The exact SHA-256 pin above identifies NVIDIA's signed binary; the
-        // WinVerifyTrust result also rejects tampered or unsigned content.
+    if status != 0 {
+        return Err(AppError::SignatureInvalid);
+    }
+
+    let organization = nvidia_signer_organization(path)?;
+    if is_nvidia_signer_organization(&organization) {
         Ok(())
     } else {
         Err(AppError::SignatureInvalid)
     }
+}
+
+unsafe fn nvidia_signer_organization(path: &Path) -> Result<String, AppError> {
+    let path_wide = wide(&path.to_string_lossy());
+    let mut encoding = 0u32;
+    let mut content_type = 0u32;
+    let mut format_type = 0u32;
+    let mut store = null_mut();
+    let mut message = null_mut();
+    let queried = CryptQueryObject(
+        CERT_QUERY_OBJECT_FILE,
+        path_wide.as_ptr().cast(),
+        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+        CERT_QUERY_FORMAT_FLAG_BINARY,
+        0,
+        &mut encoding,
+        &mut content_type,
+        &mut format_type,
+        &mut store,
+        &mut message,
+        null_mut(),
+    );
+    if queried == 0 || store.is_null() || message.is_null() {
+        return Err(AppError::SignatureInvalid);
+    }
+
+    let result = signer_organization_from_message(store, message, encoding);
+
+    let _ = CertCloseStore(store, 0);
+    let _ = CryptMsgClose(message);
+    result
+}
+
+unsafe fn signer_organization_from_message(
+    store: *mut c_void,
+    message: *mut c_void,
+    encoding: u32,
+) -> Result<String, AppError> {
+    let mut cert_info: CERT_INFO = zeroed();
+    let mut cert_info_size = size_of::<CERT_INFO>() as u32;
+    if CryptMsgGetParam(
+        message,
+        CMSG_SIGNER_CERT_INFO_PARAM,
+        0,
+        (&mut cert_info as *mut CERT_INFO).cast(),
+        &mut cert_info_size,
+    ) == 0
+    {
+        return Err(AppError::SignatureInvalid);
+    }
+
+    let cert = CertFindCertificateInStore(
+        store,
+        encoding,
+        0,
+        CERT_FIND_SUBJECT_CERT,
+        (&cert_info as *const CERT_INFO).cast(),
+        null(),
+    );
+    if cert.is_null() {
+        return Err(AppError::SignatureInvalid);
+    }
+
+    let required = CertGetNameStringW(
+        cert,
+        CERT_NAME_ATTR_TYPE,
+        0,
+        szOID_ORGANIZATION_NAME.cast(),
+        null_mut(),
+        0,
+    );
+    let organization = if required > 1 {
+        let mut buffer = vec![0u16; required as usize];
+        let copied = CertGetNameStringW(
+            cert,
+            CERT_NAME_ATTR_TYPE,
+            0,
+            szOID_ORGANIZATION_NAME.cast(),
+            buffer.as_mut_ptr(),
+            required,
+        );
+        if copied > 1 {
+            let end = copied.saturating_sub(1) as usize;
+            Some(String::from_utf16_lossy(&buffer[..end]))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let _ = CertFreeCertificateContext(cert);
+    organization.ok_or(AppError::SignatureInvalid)
 }
 
 fn load_settings() -> (Settings, bool) {

@@ -651,66 +651,10 @@ impl ConsoleApp {
     }
 
     fn diagnostic_text(&self) -> String {
-        let mut lines = vec![
-            "RTX HDR Switch diagnostics".to_string(),
-            format!(
-                "app_version={}",
-                self.snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.app_version.as_str())
-                    .unwrap_or("unknown")
-            ),
-        ];
-        if let Some(diagnostics) = self
-            .snapshot
+        self.snapshot
             .as_ref()
-            .map(|snapshot| &snapshot.diagnostics)
-        {
-            lines.push(format!(
-                "nvcpl_path={}",
-                diagnostics.nvcpl_path.as_deref().unwrap_or("not_found")
-            ));
-            lines.push(format!("expected_sha256={}", diagnostics.expected_sha256));
-            if let Some(compatibility) = &diagnostics.compatibility {
-                lines.push(format!(
-                    "compatibility={:?}",
-                    compatibility.mode
-                ));
-                lines.push(format!("actual_sha256={}", compatibility.actual_sha256));
-                lines.push(format!(
-                    "dll_version={}",
-                    compatibility.dll_version.as_deref().unwrap_or("unknown")
-                ));
-                lines.push(format!(
-                    "probe_passed={}",
-                    compatibility.probe_passed
-                ));
-                if let Some(reason) = &compatibility.reason {
-                    lines.push(format!("reason={reason}"));
-                }
-            }
-            if let Some(raw) = &diagnostics.raw_hdr_hex {
-                lines.push(format!("raw_0x318={raw}"));
-            }
-            if let Some(last_error) = &diagnostics.last_error {
-                lines.push(format!("last_error={last_error}"));
-            }
-        }
-        if let Some(hdr) = self.hdr_ready() {
-            lines.push(format!("supported={}", hdr.supported));
-            lines.push(format!("enabled={}", hdr.enabled));
-            lines.push(format!("active={}", hdr.active));
-            lines.push(format!("error_code={}", hdr.error_code));
-            lines.push(format!("peak_brightness={}", hdr.peak_brightness));
-            lines.push(format!(
-                "peak_range={}..{}",
-                hdr.peak_min, hdr.peak_max
-            ));
-            lines.push(format!("middle_gray={}", hdr.middle_gray));
-            lines.push(format!("contrast={}", hdr.contrast));
-            lines.push(format!("saturation={}", hdr.saturation));
-        }
-        lines.join("\n")
+            .map(format_diagnostic_text)
+            .unwrap_or_else(|| "RTX HDR Switch diagnostics\napp_version=unknown".into())
     }
 
     fn enabled(&self) -> bool {
@@ -732,6 +676,22 @@ impl ConsoleApp {
                 error.clone(),
                 "● 不可用".into(),
             ),
+            Some(UiHdrState::Ready(hdr)) if !self.compatibility_writable() => (
+                "RTX VIDEO HDR · 只读兼容".into(),
+                if !hdr.supported {
+                    "当前 GPU 或显示器不支持 RTX 视频 HDR；当前构建仅允许读取。".into()
+                } else if hdr.error_code != 0 {
+                    format!(
+                        "{}；当前构建仅允许读取。",
+                        error_for_code(hdr.error_code)
+                    )
+                } else {
+                    self.compatibility()
+                        .and_then(|compatibility| compatibility.reason.clone())
+                        .unwrap_or_else(|| "当前 NVIDIA 构建未经验证，已禁止写入。".into())
+                },
+                "● 只读".into(),
+            ),
             Some(UiHdrState::Ready(hdr)) if !hdr.supported => (
                 "RTX VIDEO HDR 不支持".into(),
                 "当前 GPU 或显示器不支持 RTX 视频 HDR".into(),
@@ -741,13 +701,6 @@ impl ConsoleApp {
                 "RTX VIDEO HDR 不可用".into(),
                 error_for_code(hdr.error_code).into(),
                 "● 不可用".into(),
-            ),
-            Some(UiHdrState::Ready(_)) if !self.compatibility_writable() => (
-                "RTX VIDEO HDR · 只读兼容".into(),
-                self.compatibility()
-                    .and_then(|compatibility| compatibility.reason.clone())
-                    .unwrap_or_else(|| "当前 NVIDIA 构建未经验证，已禁止写入。".into()),
-                "● 只读".into(),
             ),
             Some(UiHdrState::Ready(hdr)) if self.busy() => (
                 "正在切换 RTX VIDEO HDR".into(),
@@ -1285,7 +1238,13 @@ impl ConsoleApp {
             .and_then(|value| value.dll_version.as_deref())
             .unwrap_or("未知");
         let probe_text = compatibility
-            .map(|value| if value.probe_passed { "通过" } else { "未完成" })
+            .map(|value| {
+                if value.probe_passed {
+                    "通过"
+                } else {
+                    "未完成"
+                }
+            })
             .unwrap_or("等待");
         let actual_sha256 = compatibility
             .map(|value| value.actual_sha256.as_str())
@@ -1483,6 +1442,49 @@ impl ConsoleApp {
                     ),
             )
     }
+}
+
+fn format_diagnostic_text(snapshot: &UiSnapshot) -> String {
+    let mut lines = vec![
+        "RTX HDR Switch diagnostics".to_string(),
+        format!("app_version={}", snapshot.app_version),
+    ];
+    let diagnostics = &snapshot.diagnostics;
+    lines.push(format!(
+        "nvcpl_path={}",
+        diagnostics.nvcpl_path.as_deref().unwrap_or("not_found")
+    ));
+    lines.push(format!("expected_sha256={}", diagnostics.expected_sha256));
+    if let Some(compatibility) = &diagnostics.compatibility {
+        lines.push(format!("compatibility={:?}", compatibility.mode));
+        lines.push(format!("actual_sha256={}", compatibility.actual_sha256));
+        lines.push(format!(
+            "dll_version={}",
+            compatibility.dll_version.as_deref().unwrap_or("unknown")
+        ));
+        lines.push(format!("probe_passed={}", compatibility.probe_passed));
+        if let Some(reason) = &compatibility.reason {
+            lines.push(format!("reason={reason}"));
+        }
+    }
+    if let Some(raw) = &diagnostics.raw_hdr_hex {
+        lines.push(format!("raw_0x318={raw}"));
+    }
+    if let Some(last_error) = &diagnostics.last_error {
+        lines.push(format!("last_error={last_error}"));
+    }
+    if let UiHdrState::Ready(hdr) = &snapshot.hdr {
+        lines.push(format!("supported={}", hdr.supported));
+        lines.push(format!("enabled={}", hdr.enabled));
+        lines.push(format!("active={}", hdr.active));
+        lines.push(format!("error_code={}", hdr.error_code));
+        lines.push(format!("peak_brightness={}", hdr.peak_brightness));
+        lines.push(format!("peak_range={}..{}", hdr.peak_min, hdr.peak_max));
+        lines.push(format!("middle_gray={}", hdr.middle_gray));
+        lines.push(format!("contrast={}", hdr.contrast));
+        lines.push(format!("saturation={}", hdr.saturation));
+    }
+    lines.join("\n")
 }
 
 impl Render for ConsoleApp {
@@ -1768,9 +1770,12 @@ fn log_line(text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{error_for_code, hotkey_from_keystroke};
+    use super::{error_for_code, format_diagnostic_text, hotkey_from_keystroke};
     use gpui_kit::{Keystroke, Modifiers};
-    use rtx_hdr_switch::Hotkey;
+    use rtx_hdr_switch::ipc::{DiagnosticsInfo, UiHdrState, UiSnapshot};
+    use rtx_hdr_switch::{
+        CompatibilityInfo, CompatibilityMode, HdrSnapshot, Hotkey, Settings, NVCPL_SHA256_HEX,
+    };
 
     fn stroke(modifiers: Modifiers, key: &str) -> Keystroke {
         Keystroke {
@@ -1818,5 +1823,49 @@ mod tests {
         assert!(error_for_code(1).contains("HDR10"));
         assert!(error_for_code(2).contains("Windows HDR"));
         assert!(error_for_code(3).contains("Surround"));
+    }
+
+    #[test]
+    fn formats_read_only_diagnostics_for_clipboard() {
+        let snapshot = UiSnapshot {
+            protocol_version: 3,
+            app_version: "test".into(),
+            hdr: UiHdrState::Ready(HdrSnapshot {
+                supported: true,
+                enabled: false,
+                active: false,
+                error_code: 0,
+                peak_brightness: 1440,
+                peak_min: 400,
+                peak_max: 1440,
+                middle_gray: 50,
+                contrast: 0,
+                saturation: 0,
+            }),
+            settings: Settings::default(),
+            hotkey_registered: true,
+            busy: false,
+            diagnostics: DiagnosticsInfo {
+                nvcpl_path: Some(r"C:\NVIDIA\nvcpl.dll".into()),
+                expected_sha256: NVCPL_SHA256_HEX.into(),
+                compatibility: Some(CompatibilityInfo {
+                    mode: CompatibilityMode::ReadOnlyUnknownBuild,
+                    actual_sha256: "abcd".into(),
+                    expected_sha256: NVCPL_SHA256_HEX.into(),
+                    dll_version: Some("8.17.15.5527".into()),
+                    probe_passed: true,
+                    reason: Some("hash changed".into()),
+                }),
+                raw_hdr_hex: Some("00010203".into()),
+                last_error: Some("read only".into()),
+            },
+        };
+
+        let text = format_diagnostic_text(&snapshot);
+        assert!(text.contains("compatibility=ReadOnlyUnknownBuild"));
+        assert!(text.contains("actual_sha256=abcd"));
+        assert!(text.contains("raw_0x318=00010203"));
+        assert!(text.contains("peak_range=400..1440"));
+        assert!(text.contains("last_error=read only"));
     }
 }
