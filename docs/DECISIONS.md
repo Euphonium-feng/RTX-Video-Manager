@@ -136,3 +136,9 @@ experimental writes behind a toggle, maintaining an online trust list, or disabl
 the console entirely when the hash is unknown. Signature, signer, export, UXD, or
 read-probe failures still fail closed because diagnostic-only operation is not safe
 if the private API shape has not been demonstrated.
+
+Authenticode signer extraction queries the variable-size `CERT_INFO` buffer first,
+then allocates an aligned `u64` buffer using the size returned by
+`CryptMsgGetParam(CMSG_SIGNER_CERT_INFO_PARAM)`. Passing only
+`size_of::<CERT_INFO>()` validates in unit tests but fails on the real NVIDIA
+signature because issuer and serial payloads follow the fixed structure.
