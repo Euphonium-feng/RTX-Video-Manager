@@ -45,19 +45,20 @@
   confirmed that both cards fit, the HDR spectrum and VSR ladder are visible, the
   summary rail is not clipped, and the footer remains fixed. The checked-in preview is
   `prototype/gpui-overview-125.png`.
-- GitHub Actions run `40466747582` is green for commit `397e674`; strict formatting,
+- GitHub Actions run `40471573209` is green for commit `0dfa099`; strict formatting,
   Clippy, all tests, both Release builds, packaging, and upload passed.
 - Final artifact ZIP SHA-256 is
-  `113AD08EFA5299E54AF47CB9C7793479036E6DEAF681167FE657929D40A0572E`;
-  host SHA-256 is `E0BA85B3B897CEC48498B924A1F5B1A29B2E5690B7588CB38D5D6244BBE1A091`
+  `DD9547046AEFD98B418B768DB2D0CFB0D2BF956CA31090D4FE9F6D30FF385024`;
+  host SHA-256 is `107DB1063A901BAD7EA873BB893085111FB807811A5298ABDC8450844F7433B8`
   (656,384 bytes); console SHA-256 is
-  `9A08D4B1C4D3B59513D8C8634106C4D759F699449D70ABE89E13823D03A06C08`
+  `A6EA191324E88E5366B3B4930A188BF1ABC1D38C70F97F29F81914753E99B1E0`
   (17,798,144 bytes).
 - Off-screen 125% captures of the final artifact confirmed: the VSR title is split as
   `RTX VIDEO` / `SUPER RESOLUTION`; overview legends align; HDR labels show the
   driver-derived `400` and `1440` endpoints; HDR shows only `Ctrl+Alt+H`; VSR's right
   card has no clipped note; the quality panel fills the remaining height; and
-  diagnostics stays inside its rounded panel. Checked-in previews are
+  diagnostics stays inside its rounded panel. Both hero cards now render the clipped
+  calibration arc from the HTML prototype at low opacity. Checked-in previews are
   `prototype/gpui-overview-125.png`, `prototype/gpui-hdr-125.png`, and
   `prototype/gpui-vsr-125.png`.
 - The temporary verification host updated the preserved `RtxHdrSwitch` startup value;
