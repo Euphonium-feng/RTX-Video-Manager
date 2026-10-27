@@ -13,7 +13,8 @@
   `RTX VIDEO` / `SUPER RESOLUTION` title, both feature legends share one baseline, the
   HDR spectrum shows only the driver-derived `peak_min` / `peak_max` endpoints, the HDR
   page shows only its own shortcut, both compact information cards no longer clip their
-  lower text, and each hero carries the prototype's low-opacity clipped calibration arc.
+  lower text, each hero carries the prototype's low-opacity clipped calibration arc, and
+  enabled close actions plus VSR quality choices use explicit bordered surfaces.
 - The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
   been rendered and visually reviewed at 100% and 125% preview scales.
 - GitHub Actions run `40357825705` is green for commit `9d8ebc2`; strict

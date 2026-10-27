@@ -214,6 +214,13 @@ a single clipped `220 x 220` circle at the lower-right edge, using the same sign
 at roughly eight percent opacity. This keeps the layered depth without adding image
 assets, animations, or a second visual system.
 
+Action buttons use an explicit wrapper surface because `ButtonCustomVariant`'s custom
+fill rendered too faint against the hero panels. Enabled close actions use the same
+raised background and rule border as compact information cells. VSR quality choices use
+that surface when unselected and a solid warm fill with dark text when selected. The
+button itself contributes interaction and accessibility while the wrapper owns the
+visible color, so the control remains legible in enabled, disabled, and read-only states.
+
 The HDR spectrum bar has no dark outline on its rounded cap. GPUI's one-pixel border
 left a visibly dark seam between the bright final segment and rounded it independently:
 the first segment rounds its left corners and the bright final segment rounds its right

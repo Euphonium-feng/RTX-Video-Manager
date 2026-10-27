@@ -1401,26 +1401,14 @@ impl ConsoleApp {
         };
 
         let toggle_style = ButtonCustomVariant::new(cx)
-            .color(if enabled {
-                rgb(RAISED).into()
-            } else {
-                rgb(SIGNAL).into()
-            })
-            .foreground(if enabled {
+            .color(rgb(INK).opacity(0.0).into())
+            .foreground(if enabled || !can_toggle {
                 rgb(TEXT).into()
             } else {
                 rgb(INK).into()
             })
-            .hover(if enabled {
-                rgb(0x203138).into()
-            } else {
-                rgb(SIGNAL_HOVER).into()
-            })
-            .active(if enabled {
-                rgb(0x17262B).into()
-            } else {
-                rgb(0x51CBD4).into()
-            });
+            .hover(rgb(INK).opacity(0.0).into())
+            .active(rgb(INK).opacity(0.0).into());
 
         h_flex()
             .flex_1()
@@ -1504,20 +1492,45 @@ impl ConsoleApp {
                             .child(badge),
                     )
                     .child(
-                        Button::new("toggle-hdr")
-                            .custom(toggle_style)
-                            .label(if read_only {
-                                "只读兼容模式"
-                            } else if enabled {
-                                "关闭 RTX HDR"
-                            } else {
-                                "开启 RTX HDR"
-                            })
-                            .loading(busy)
-                            .disabled(!can_toggle)
+                        div()
                             .w_full()
-                            .h(px(48.))
-                            .on_click(cx.listener(|app, _, _, cx| app.toggle_hdr(cx))),
+                            .rounded(px(10.))
+                            .overflow_hidden()
+                            .border_1()
+                            .border_color(if enabled || !can_toggle {
+                                rgb(RULE)
+                            } else {
+                                rgb(SIGNAL_HOVER)
+                            })
+                            .bg(if enabled || !can_toggle {
+                                rgb(RAISED)
+                            } else {
+                                rgb(SIGNAL)
+                            })
+                            .opacity(if can_toggle { 1.0 } else { 0.58 })
+                            .hover(|this| {
+                                if enabled || !can_toggle {
+                                    this.bg(rgb(0x203138))
+                                } else {
+                                    this.bg(rgb(SIGNAL_HOVER))
+                                }
+                            })
+                            .child(
+                                Button::new("toggle-hdr")
+                                    .custom(toggle_style)
+                                    .label(if read_only {
+                                        "只读兼容模式"
+                                    } else if enabled {
+                                        "关闭 RTX HDR"
+                                    } else {
+                                        "开启 RTX HDR"
+                                    })
+                                    .loading(busy)
+                                    .disabled(!can_toggle)
+                                    .w_full()
+                                    .h(px(48.))
+                                    .on_click(cx.listener(|app, _, _, cx| app.toggle_hdr(cx))),
+                            ),
                     )
                     .child(
                         v_flex()
@@ -1540,26 +1553,14 @@ impl ConsoleApp {
         let busy = self.busy_kind() == Some(UiBusyKind::VsrToggle);
 
         let toggle_style = ButtonCustomVariant::new(cx)
-            .color(if enabled {
-                rgb(RAISED).into()
-            } else {
-                rgb(WARM).into()
-            })
-            .foreground(if enabled {
+            .color(rgb(INK).opacity(0.0).into())
+            .foreground(if enabled || !can_toggle {
                 rgb(TEXT).into()
             } else {
                 rgb(INK).into()
             })
-            .hover(if enabled {
-                rgb(0x203138).into()
-            } else {
-                rgb(0xF5C879).into()
-            })
-            .active(if enabled {
-                rgb(0x17262B).into()
-            } else {
-                rgb(0xD99A43).into()
-            });
+            .hover(rgb(INK).opacity(0.0).into())
+            .active(rgb(INK).opacity(0.0).into());
 
         h_flex()
             .flex_1()
@@ -1655,22 +1656,47 @@ impl ConsoleApp {
                             .child(badge),
                     )
                     .child(
-                        Button::new("toggle-vsr")
-                            .custom(toggle_style)
-                            .label(if read_only {
-                                "只读兼容模式"
-                            } else if !supported {
-                                "VSR 不可用"
-                            } else if enabled {
-                                "关闭 RTX VSR"
-                            } else {
-                                "开启 RTX VSR"
-                            })
-                            .loading(busy)
-                            .disabled(!can_toggle)
+                        div()
                             .w_full()
-                            .h(px(46.))
-                            .on_click(cx.listener(|app, _, _, cx| app.toggle_vsr(cx))),
+                            .rounded(px(10.))
+                            .overflow_hidden()
+                            .border_1()
+                            .border_color(if enabled || !can_toggle {
+                                rgb(RULE)
+                            } else {
+                                rgb(WARM).opacity(0.8)
+                            })
+                            .bg(if enabled || !can_toggle {
+                                rgb(RAISED)
+                            } else {
+                                rgb(WARM)
+                            })
+                            .opacity(if can_toggle { 1.0 } else { 0.58 })
+                            .hover(|this| {
+                                if enabled || !can_toggle {
+                                    this.bg(rgb(0x2D2A22))
+                                } else {
+                                    this.bg(rgb(0xF5C879))
+                                }
+                            })
+                            .child(
+                                Button::new("toggle-vsr")
+                                    .custom(toggle_style)
+                                    .label(if read_only {
+                                        "只读兼容模式"
+                                    } else if !supported {
+                                        "VSR 不可用"
+                                    } else if enabled {
+                                        "关闭 RTX VSR"
+                                    } else {
+                                        "开启 RTX VSR"
+                                    })
+                                    .loading(busy)
+                                    .disabled(!can_toggle)
+                                    .w_full()
+                                    .h(px(46.))
+                                    .on_click(cx.listener(|app, _, _, cx| app.toggle_vsr(cx))),
+                            ),
                     )
                     .child(
                         div()
@@ -1767,29 +1793,47 @@ impl ConsoleApp {
                     .into_iter()
                     .map(|quality| {
                         let selected = self.vsr_choice == quality;
-                        Button::new(vsr_quality_id(quality))
-                            .custom(
-                                ButtonCustomVariant::new(cx)
-                                    .color(if selected {
-                                        rgb(WARM).into()
-                                    } else {
-                                        rgb(RAISED).into()
-                                    })
-                                    .foreground(if selected {
-                                        rgb(INK).into()
-                                    } else {
-                                        rgb(TEXT).into()
-                                    })
-                                    .hover(rgb(0x203138).into())
-                                    .active(rgb(0x17262B).into()),
-                            )
-                            .label(quality_label(quality))
-                            .disabled(!can_choose)
+                        div()
                             .w(px(78.))
                             .h(px(38.))
-                            .on_click(cx.listener(move |app, _, _, cx| {
-                                app.choose_vsr_quality(quality, cx);
-                            }))
+                            .rounded(px(9.))
+                            .overflow_hidden()
+                            .border_1()
+                            .border_color(if selected {
+                                rgb(0xF5C879)
+                            } else {
+                                rgb(RULE)
+                            })
+                            .bg(if selected { rgb(WARM) } else { rgb(RAISED) })
+                            .opacity(if can_choose { 1.0 } else { 0.55 })
+                            .hover(move |this| {
+                                if selected {
+                                    this.bg(rgb(0xF5C879))
+                                } else {
+                                    this.bg(rgb(0x203138))
+                                }
+                            })
+                            .child(
+                                Button::new(vsr_quality_id(quality))
+                                    .custom(
+                                        ButtonCustomVariant::new(cx)
+                                            .color(rgb(INK).opacity(0.0).into())
+                                            .foreground(if selected {
+                                                rgb(INK).into()
+                                            } else {
+                                                rgb(TEXT).into()
+                                            })
+                                            .hover(rgb(INK).opacity(0.0).into())
+                                            .active(rgb(INK).opacity(0.08).into()),
+                                    )
+                                    .label(quality_label(quality))
+                                    .disabled(!can_choose)
+                                    .w_full()
+                                    .h_full()
+                                    .on_click(cx.listener(move |app, _, _, cx| {
+                                        app.choose_vsr_quality(quality, cx);
+                                    })),
+                            )
                     }),
                 ),
             )

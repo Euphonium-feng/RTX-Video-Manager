@@ -96,6 +96,10 @@ share one horizontal baseline.
 Each HDR/VSR hero carries the prototype's low-opacity calibration arc, clipped by the
 card's rounded surface. Its color follows the feature signal (`SIGNAL` for HDR and
 `WARM` for VSR) rather than acting as an unrelated decoration.
+When a feature is enabled, its close action uses an explicit raised surface with a
+visible rule border instead of relying on the component's faint default fill. VSR
+quality choices use the same bordered surface model; the selected quality is a solid
+amber fill with dark text.
 
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update
