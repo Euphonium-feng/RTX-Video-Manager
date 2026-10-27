@@ -47,13 +47,13 @@
   confirmed that both cards fit, the HDR spectrum and VSR ladder are visible, the
   summary rail is not clipped, and the footer remains fixed. The checked-in preview is
   `prototype/gpui-overview-125.png`.
-- GitHub Actions run `40478412127` is green for commit `d805371`; strict formatting,
+- GitHub Actions run `40501367153` is green for commit `ad0055d`; strict formatting,
   Clippy, all tests, both Release builds, packaging, and upload passed.
 - Final artifact ZIP SHA-256 is
-  `D940B18F5723789A4A9AE436F03830F4A7D56281ACC9448C887CF989DE871965`;
-  host SHA-256 is `358395C40F79552FEA38113F2B0EB7B4F21CF645EF9C38BE513AF47C0892C539`
+  `E0515F1202E3E403EA4D3AE3C7F75194A75F521681CBDE1A4A87751CAD8F6AF4`;
+  host SHA-256 is `79C9B5D66538DDA0889414A405E7DEAF55FB7C1FF8CDF22C03FD37E7F5D244D4`
   (656,384 bytes); console SHA-256 is
-  `BE16F01FDA889474C8FABF9CD0CEBAAC6DB6F4E11D4F010AC0685A752ED196BD`
+  `247D1D6317B432E82A5F8BF58CEFB1BA823E18D59B36B9D8E2D4202BD2718D5C`
   (17,798,144 bytes).
 - Off-screen 125% captures of the final artifact confirmed: the VSR title is split as
   `RTX VIDEO` / `SUPER RESOLUTION`; overview legends align; HDR labels show the
@@ -64,14 +64,17 @@
   rounded endpoints without a dark one-pixel seam. Checked-in previews are
   `prototype/gpui-overview-125.png`, `prototype/gpui-hdr-125.png`, and
   `prototype/gpui-vsr-125.png`.
+- Off-screen 125% verification of run `40501367153` confirmed that enabled close actions
+  use the visible raised surface and rule border, the selected VSR quality is a solid
+  amber surface, and reset/save footer actions appear on settings only. Overview, HDR,
+  VSR, and diagnostics retain status and reconnect affordances without settings commands.
 - Real-machine testing initially appeared to lack the VSR overlay because the running
   `RtxVideoManager.exe` process was still the pre-replacement image at the installed
-  path. Restarting the same installed `40478412127` build loaded the updated host and
-  the user confirmed the VSR toggle overlay was visible. The installed background host
-  is now running from `D:\Applications\RtxVideoManager-win-x64\RtxVideoManager.exe`,
-  and the preserved startup value points to that path.
-- The temporary verification host updated the preserved `RtxHdrSwitch` startup value;
-  it was restored to the pre-test installed executable path after capture.
+  path. Restarting loaded the updated host and the user confirmed the VSR toggle overlay
+  was visible. The verified `40501367153` binaries have now replaced the installed files;
+  the background host is running from
+  `D:\Applications\RtxVideoManager-win-x64\RtxVideoManager.exe`, and the preserved
+  startup value points to that path.
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
   approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
   optimization rather than a blocker for visual acceptance.
