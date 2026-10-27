@@ -53,11 +53,12 @@
   `9A08D4B1C4D3B59513D8C8634106C4D759F699449D70ABE89E13823D03A06C08`
   (17,798,144 bytes).
 - Off-screen 125% captures of the final artifact confirmed: the VSR title is split as
-  `RTX VIDEO` / `SUPER RESOLUTION`; overview legends align; HDR labels show only the
-  `1440` upper endpoint; HDR shows only `Ctrl+Alt+H`; VSR's right card has no clipped
-  note; the quality panel fills the remaining height; and diagnostics stays inside its
-  rounded panel. Checked-in previews are `prototype/gpui-overview-125.png`,
-  `prototype/gpui-hdr-125.png`, and `prototype/gpui-vsr-125.png`.
+  `RTX VIDEO` / `SUPER RESOLUTION`; overview legends align; HDR labels show the
+  driver-derived `400` and `1440` endpoints; HDR shows only `Ctrl+Alt+H`; VSR's right
+  card has no clipped note; the quality panel fills the remaining height; and
+  diagnostics stays inside its rounded panel. Checked-in previews are
+  `prototype/gpui-overview-125.png`, `prototype/gpui-hdr-125.png`, and
+  `prototype/gpui-vsr-125.png`.
 - The temporary verification host updated the preserved `RtxHdrSwitch` startup value;
   it was restored to the pre-test installed executable path after capture.
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used

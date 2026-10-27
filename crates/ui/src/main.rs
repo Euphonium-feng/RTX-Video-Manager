@@ -914,6 +914,7 @@ impl ConsoleApp {
         let read_only = self.compatibility_read_only();
         let hdr = self.hdr_ready();
         let peak = hdr.map_or("—".into(), |hdr| hdr.peak_brightness.to_string());
+        let peak_min = hdr.map_or("—".into(), |hdr| hdr.peak_min.to_string());
         let peak_max = hdr.map_or("—".into(), |hdr| hdr.peak_max.to_string());
 
         v_flex()
@@ -1010,10 +1011,12 @@ impl ConsoleApp {
             .child(
                 h_flex()
                     .w_full()
+                    .justify_between()
                     .font_family("Cascadia Mono")
                     .text_size(px(8.))
                     .text_color(rgb(SUBTLE))
-                    .child(div().ml_auto().child(peak_max)),
+                    .child(peak_min)
+                    .child(peak_max),
             )
             .child(
                 h_flex()
