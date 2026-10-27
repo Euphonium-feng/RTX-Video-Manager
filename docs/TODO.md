@@ -58,7 +58,8 @@
   driver-derived `400` and `1440` endpoints; HDR shows only `Ctrl+Alt+H`; VSR's right
   card has no clipped note; the quality panel fills the remaining height; and
   diagnostics stays inside its rounded panel. Both hero cards now render the clipped
-  calibration arc from the HTML prototype at low opacity. Checked-in previews are
+  calibration arc from the HTML prototype at low opacity, and the HDR spectrum cap no
+  longer has a dark one-pixel seam. Checked-in previews are
   `prototype/gpui-overview-125.png`, `prototype/gpui-hdr-125.png`, and
   `prototype/gpui-vsr-125.png`.
 - The temporary verification host updated the preserved `RtxHdrSwitch` startup value;

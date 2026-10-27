@@ -2604,8 +2604,6 @@ fn spectrum_bar() -> impl IntoElement {
         .h(px(12.))
         .overflow_hidden()
         .rounded(px(5.))
-        .border_1()
-        .border_color(rgb(0x294249))
         .children(
             [0x16262B, 0x21464B, 0x3C9299, 0x9BE7E9]
                 .into_iter()

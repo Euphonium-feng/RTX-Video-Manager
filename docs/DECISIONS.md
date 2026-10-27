@@ -213,3 +213,7 @@ The production GPUI cards reproduce the HTML prototype's background calibration 
 a single clipped `220 x 220` circle at the lower-right edge, using the same signal color
 at roughly eight percent opacity. This keeps the layered depth without adding image
 assets, animations, or a second visual system.
+
+The HDR spectrum bar has no dark outline on its rounded cap. GPUI's one-pixel border
+left a visibly dark seam between the bright final segment and the rounded edge, so the
+bar relies on clipping and anti-aliasing alone for a clean endpoint.
