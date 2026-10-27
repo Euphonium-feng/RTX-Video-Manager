@@ -14,7 +14,8 @@
   HDR spectrum shows only the driver-derived `peak_min` / `peak_max` endpoints, the HDR
   page shows only its own shortcut, both compact information cards no longer clip their
   lower text, each hero carries the prototype's low-opacity clipped calibration arc, and
-  enabled close actions plus VSR quality choices use explicit bordered surfaces.
+  enabled close actions plus VSR quality choices use explicit bordered surfaces. Settings
+  reset/save commands are now restricted to the settings page in the shared footer.
 - The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
   been rendered and visually reviewed at 100% and 125% preview scales.
 - GitHub Actions run `40357825705` is green for commit `9d8ebc2`; strict

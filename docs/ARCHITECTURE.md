@@ -100,6 +100,8 @@ When a feature is enabled, its close action uses an explicit raised surface with
 visible rule border instead of relying on the component's faint default fill. VSR
 quality choices use the same bordered surface model; the selected quality is a solid
 amber fill with dark text.
+The persistent footer carries connection state on every page and reconnect when needed,
+but `恢复默认` and `保存更改` appear only on the settings page.
 
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update

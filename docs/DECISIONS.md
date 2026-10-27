@@ -221,6 +221,10 @@ that surface when unselected and a solid warm fill with dark text when selected.
 button itself contributes interaction and accessibility while the wrapper owns the
 visible color, so the control remains legible in enabled, disabled, and read-only states.
 
+The footer keeps global status and reconnect affordances on all pages, but settings-only
+commands are shown only on the settings page. `恢复默认` and `保存更改` no longer appear
+under HDR, VSR, overview, or diagnostics where they do not apply.
+
 The HDR spectrum bar has no dark outline on its rounded cap. GPUI's one-pixel border
 left a visibly dark seam between the bright final segment and rounded it independently:
 the first segment rounds its left corners and the bright final segment rounds its right

@@ -1799,11 +1799,7 @@ impl ConsoleApp {
                             .rounded(px(9.))
                             .overflow_hidden()
                             .border_1()
-                            .border_color(if selected {
-                                rgb(0xF5C879)
-                            } else {
-                                rgb(RULE)
-                            })
+                            .border_color(if selected { rgb(0xF5C879) } else { rgb(RULE) })
                             .bg(if selected { rgb(WARM) } else { rgb(RAISED) })
                             .opacity(if can_choose { 1.0 } else { 0.55 })
                             .hover(move |this| {
@@ -2471,30 +2467,32 @@ impl ConsoleApp {
                             }),
                         ))
                     })
-                    .child(
-                        Button::new("reset")
-                            .ghost()
-                            .label("恢复默认")
-                            .on_click(cx.listener(|app, _, _, cx| app.reset_defaults(cx))),
-                    )
-                    .child(
-                        Button::new("save")
-                            .custom(
-                                ButtonCustomVariant::new(cx)
-                                    .color(rgb(SIGNAL).into())
-                                    .foreground(rgb(INK).into())
-                                    .hover(rgb(SIGNAL_HOVER).into())
-                                    .active(rgb(0x51CBD4).into()),
-                            )
-                            .label(if self.saving {
-                                "保存中…"
-                            } else {
-                                "保存更改"
-                            })
-                            .loading(self.saving)
-                            .disabled(save_disabled)
-                            .on_click(cx.listener(|app, _, _, cx| app.save(cx))),
-                    ),
+                    .when(self.page == UiPage::Settings, |this| {
+                        this.child(
+                            Button::new("reset")
+                                .ghost()
+                                .label("恢复默认")
+                                .on_click(cx.listener(|app, _, _, cx| app.reset_defaults(cx))),
+                        )
+                        .child(
+                            Button::new("save")
+                                .custom(
+                                    ButtonCustomVariant::new(cx)
+                                        .color(rgb(SIGNAL).into())
+                                        .foreground(rgb(INK).into())
+                                        .hover(rgb(SIGNAL_HOVER).into())
+                                        .active(rgb(0x51CBD4).into()),
+                                )
+                                .label(if self.saving {
+                                    "保存中…"
+                                } else {
+                                    "保存更改"
+                                })
+                                .loading(self.saving)
+                                .disabled(save_disabled)
+                                .on_click(cx.listener(|app, _, _, cx| app.save(cx))),
+                        )
+                    }),
             )
     }
 }
