@@ -967,13 +967,18 @@ impl ConsoleApp {
                     ),
             )
             .child(
-                div()
+                v_flex()
+                    .h(px(56.))
                     .mt_1()
-                    .font_family("Bahnschrift")
-                    .text_size(px(30.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(TEXT))
-                    .child("RTX VIDEO HDR"),
+                    .justify_center()
+                    .child(
+                        div()
+                            .font_family("Bahnschrift")
+                            .text_size(px(30.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("RTX VIDEO HDR"),
+                    ),
             )
             .child(
                 div()
@@ -1114,13 +1119,27 @@ impl ConsoleApp {
                     ),
             )
             .child(
-                div()
+                v_flex()
+                    .h(px(56.))
                     .mt_1()
-                    .font_family("Bahnschrift")
-                    .text_size(px(22.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(TEXT))
-                    .child("RTX VIDEO SUPER RESOLUTION"),
+                    .justify_center()
+                    .gap(px(0.))
+                    .child(
+                        div()
+                            .font_family("Bahnschrift")
+                            .text_size(px(22.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("RTX VIDEO"),
+                    )
+                    .child(
+                        div()
+                            .font_family("Bahnschrift")
+                            .text_size(px(22.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(TEXT))
+                            .child("SUPER RESOLUTION"),
+                    ),
             )
             .child(
                 div()
@@ -1381,11 +1400,6 @@ impl ConsoleApp {
         } else {
             format!("HDR {}", format_hotkey(self.draft.hotkey))
         };
-        let secondary_hint = if read_only {
-            "禁止写入".to_string()
-        } else {
-            format!("VSR {}", format_hotkey(self.draft.vsr_hotkey))
-        };
 
         let toggle_style = ButtonCustomVariant::new(cx)
             .color(if enabled {
@@ -1511,8 +1525,7 @@ impl ConsoleApp {
                             .text_size(px(9.))
                             .text_color(rgb(SUBTLE))
                             .text_center()
-                            .child(primary_hint)
-                            .child(secondary_hint),
+                            .child(primary_hint),
                     ),
             )
     }
@@ -1580,13 +1593,25 @@ impl ConsoleApp {
                             ),
                     )
                     .child(
-                        div()
+                        v_flex()
                             .mt(px(4.))
-                            .font_family("Bahnschrift")
-                            .text_size(px(28.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(TEXT))
-                            .child("RTX VIDEO SUPER RESOLUTION"),
+                            .gap(px(0.))
+                            .child(
+                                div()
+                                    .font_family("Bahnschrift")
+                                    .text_size(px(28.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(TEXT))
+                                    .child("RTX VIDEO"),
+                            )
+                            .child(
+                                div()
+                                    .font_family("Bahnschrift")
+                                    .text_size(px(28.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(TEXT))
+                                    .child("SUPER RESOLUTION"),
+                            ),
                     )
                     .child(
                         div()

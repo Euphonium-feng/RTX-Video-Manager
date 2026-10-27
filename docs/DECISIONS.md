@@ -199,3 +199,9 @@ an unstructured empty lower page.
 Rejected: silently clipping a 64-character hash in the driver card, shrinking the
 whole detail page until sparse content looked dense, or duplicating raw diagnostic
 payloads in every compact card.
+
+The overview also reserves one fixed title block for both feature cards. HDR keeps its
+single-line title centered in that block, while VSR renders `RTX VIDEO` and
+`SUPER RESOLUTION` as two deliberate lines. This keeps the brightness spectrum and VSR
+quality ladder labels on one baseline. The HDR detail page lists only the HDR shortcut
+because the VSR shortcut belongs to the separate VSR page and tray toggle.

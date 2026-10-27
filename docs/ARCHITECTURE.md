@@ -89,7 +89,10 @@ The HDR and VSR detail pages pair their hero with a narrow right-side informatio
 The HDR information card shows only compatibility mode, DLL version, and probe result;
 long hashes and raw records stay in diagnostics. The VSR quality panel grows into the
 remaining page height and uses a three-part quality guide plus a live `0x315` status
-strip, so the page does not end above a large unused region.
+strip, so the page does not end above a large unused region. The HDR detail page shows
+only its own hotkey. VSR titles use an explicit `RTX VIDEO` / `SUPER RESOLUTION` break,
+and the overview reserves the same title height on both cards so their two legends
+share one horizontal baseline.
 
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update
