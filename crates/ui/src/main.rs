@@ -923,6 +923,7 @@ impl ConsoleApp {
             .h_full()
             .gap_2()
             .p_5()
+            .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
@@ -1051,6 +1052,7 @@ impl ConsoleApp {
                             )),
                     ),
             )
+            .child(hero_arc(SIGNAL))
     }
 
     fn render_overview_vsr_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1071,6 +1073,7 @@ impl ConsoleApp {
             .h_full()
             .gap_2()
             .p_5()
+            .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
@@ -1214,6 +1217,7 @@ impl ConsoleApp {
                             )),
                     ),
             )
+            .child(hero_arc(WARM))
     }
 
     fn render_overview_summary(&self) -> impl IntoElement {
@@ -1424,6 +1428,7 @@ impl ConsoleApp {
             .h_full()
             .gap_5()
             .p_5()
+            .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
@@ -1523,6 +1528,7 @@ impl ConsoleApp {
                             .child(primary_hint),
                     ),
             )
+            .child(hero_arc(SIGNAL))
     }
 
     fn render_vsr_hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1561,6 +1567,7 @@ impl ConsoleApp {
             .h_full()
             .gap_5()
             .p_5()
+            .overflow_hidden()
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(RULE))
@@ -1677,6 +1684,7 @@ impl ConsoleApp {
                             }),
                     ),
             )
+            .child(hero_arc(WARM))
     }
 
     fn render_vsr_quality(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2576,6 +2584,18 @@ impl Render for ConsoleApp {
                     .child(self.render_footer(cx)),
             )
     }
+}
+
+fn hero_arc(color: u32) -> impl IntoElement {
+    div()
+        .absolute()
+        .right(px(-54.))
+        .bottom(px(-80.))
+        .w(px(220.))
+        .h(px(220.))
+        .rounded_full()
+        .border_1()
+        .border_color(rgb(color).opacity(0.08))
 }
 
 fn spectrum_bar() -> impl IntoElement {

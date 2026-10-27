@@ -93,6 +93,9 @@ strip, so the page does not end above a large unused region. The HDR detail page
 only its own hotkey. VSR titles use an explicit `RTX VIDEO` / `SUPER RESOLUTION` break,
 and the overview reserves the same title height on both cards so their two legends
 share one horizontal baseline.
+Each HDR/VSR hero carries the prototype's low-opacity calibration arc, clipped by the
+card's rounded surface. Its color follows the feature signal (`SIGNAL` for HDR and
+`WARM` for VSR) rather than acting as an unrelated decoration.
 
 In `ReadOnlyUnknownBuild`, HDR/VSR toggles, all four HDR tuning controls,
 `应用调校`, and VSR quality writes are disabled. The reset action may still update

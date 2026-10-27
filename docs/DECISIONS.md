@@ -208,3 +208,8 @@ because the VSR shortcut belongs to the separate VSR page and tray toggle.
 The spectrum labels row keeps only the driver-derived lower and upper endpoints at the
 two ends of the scale. `基准`, the repeated midpoint range, and `动态范围` were removed
 because they did not describe separate actions or values.
+
+The production GPUI cards reproduce the HTML prototype's background calibration arc as
+a single clipped `220 x 220` circle at the lower-right edge, using the same signal color
+at roughly eight percent opacity. This keeps the layered depth without adding image
+assets, animations, or a second visual system.
