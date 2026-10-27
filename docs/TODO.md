@@ -9,6 +9,10 @@
   visual density and hierarchy are still weaker than `prototype/rtx-video-manager.html`.
   The overview now uses side-by-side HDR/VSR cards with a status rail, and the
   HDR/VSR pages have matching right-side information cards.
+- The requested final spacing pass is implemented: the overview uses a two-line
+  `RTX VIDEO` / `SUPER RESOLUTION` title, both feature legends share one baseline, the
+  HDR spectrum keeps only the driver-derived upper endpoint, the HDR page shows only its
+  own shortcut, and both compact information cards no longer clip their lower text.
 - The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
   been rendered and visually reviewed at 100% and 125% preview scales.
 - GitHub Actions run `40357825705` is green for commit `9d8ebc2`; strict
@@ -40,6 +44,22 @@
   confirmed that both cards fit, the HDR spectrum and VSR ladder are visible, the
   summary rail is not clipped, and the footer remains fixed. The checked-in preview is
   `prototype/gpui-overview-125.png`.
+- GitHub Actions run `40466747582` is green for commit `397e674`; strict formatting,
+  Clippy, all tests, both Release builds, packaging, and upload passed.
+- Final artifact ZIP SHA-256 is
+  `113AD08EFA5299E54AF47CB9C7793479036E6DEAF681167FE657929D40A0572E`;
+  host SHA-256 is `E0BA85B3B897CEC48498B924A1F5B1A29B2E5690B7588CB38D5D6244BBE1A091`
+  (656,384 bytes); console SHA-256 is
+  `9A08D4B1C4D3B59513D8C8634106C4D759F699449D70ABE89E13823D03A06C08`
+  (17,798,144 bytes).
+- Off-screen 125% captures of the final artifact confirmed: the VSR title is split as
+  `RTX VIDEO` / `SUPER RESOLUTION`; overview legends align; HDR labels show only the
+  `1440` upper endpoint; HDR shows only `Ctrl+Alt+H`; VSR's right card has no clipped
+  note; the quality panel fills the remaining height; and diagnostics stays inside its
+  rounded panel. Checked-in previews are `prototype/gpui-overview-125.png`,
+  `prototype/gpui-hdr-125.png`, and `prototype/gpui-vsr-125.png`.
+- The temporary verification host updated the preserved `RtxHdrSwitch` startup value;
+  it was restored to the pre-test installed executable path after capture.
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
   approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
   optimization rather than a blocker for visual acceptance.
@@ -171,6 +191,6 @@
 
 ## Next Action
 
-Continue background acceptance on the green `f25481b` artifact: review HDR/VSR detail
-layout without activating the window, then exercise three hotkeys, both toggles, and
-VSR active-state changes.
+The requested HDR/VSR spacing work is complete on the 125% reference display. Continue
+the remaining manual acceptance checks at 100% and 150%, then exercise the three
+hotkeys, both toggles, VSR active-state changes, and the clipboard diagnostic action.
