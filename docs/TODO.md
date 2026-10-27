@@ -62,6 +62,12 @@
   rounded endpoints without a dark one-pixel seam. Checked-in previews are
   `prototype/gpui-overview-125.png`, `prototype/gpui-hdr-125.png`, and
   `prototype/gpui-vsr-125.png`.
+- Real-machine testing initially appeared to lack the VSR overlay because the running
+  `RtxVideoManager.exe` process was still the pre-replacement image at the installed
+  path. Restarting the same installed `40478412127` build loaded the updated host and
+  the user confirmed the VSR toggle overlay was visible. The installed background host
+  is now running from `D:\Applications\RtxVideoManager-win-x64\RtxVideoManager.exe`,
+  and the preserved startup value points to that path.
 - The temporary verification host updated the preserved `RtxHdrSwitch` startup value;
   it was restored to the pre-test installed executable path after capture.
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
@@ -166,8 +172,7 @@
 - Verify the updated 860 x 620 console at 100%, 125%, and 150% DPI, including overview,
   HDR, VSR, settings, and diagnostics; confirm all quality and tuning ranges are visible,
   read-only disables both write surfaces, and no phantom controls overlap adjacent rows.
-- Verify the 500 ms overlay text for HDR on/off and VSR on/off/quality, plus the
-  diagnostics copy button and both raw VSR data fields.
+- Verify the diagnostics copy button and both raw VSR data fields.
 - Record host idle memory/CPU, console startup time, console private memory, executable
   sizes, and both SHA-256 hashes in this file after the final green run.
 - Verify the unknown-build read-only UI against a real unknown signed DLL when such a
