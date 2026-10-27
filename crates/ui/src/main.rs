@@ -914,9 +914,7 @@ impl ConsoleApp {
         let read_only = self.compatibility_read_only();
         let hdr = self.hdr_ready();
         let peak = hdr.map_or("—".into(), |hdr| hdr.peak_brightness.to_string());
-        let range = hdr.map_or("等待驱动范围".into(), |hdr| {
-            format!("{} – {} nits", hdr.peak_min, hdr.peak_max)
-        });
+        let peak_max = hdr.map_or("—".into(), |hdr| hdr.peak_max.to_string());
 
         v_flex()
             .flex_1()
@@ -1011,13 +1009,11 @@ impl ConsoleApp {
             .child(spectrum_bar())
             .child(
                 h_flex()
-                    .justify_between()
+                    .w_full()
                     .font_family("Cascadia Mono")
                     .text_size(px(8.))
                     .text_color(rgb(SUBTLE))
-                    .child("400 基准")
-                    .child(range)
-                    .child("动态范围"),
+                    .child(div().ml_auto().child(peak_max)),
             )
             .child(
                 h_flex()

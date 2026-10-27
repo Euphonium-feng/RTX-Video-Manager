@@ -205,3 +205,6 @@ single-line title centered in that block, while VSR renders `RTX VIDEO` and
 `SUPER RESOLUTION` as two deliberate lines. This keeps the brightness spectrum and VSR
 quality ladder labels on one baseline. The HDR detail page lists only the HDR shortcut
 because the VSR shortcut belongs to the separate VSR page and tray toggle.
+The spectrum labels row keeps only the driver-derived upper endpoint on the right;
+`基准`, midpoint range, and `动态范围` labels were removed because they did not describe
+separate actions or values.
