@@ -967,18 +967,14 @@ impl ConsoleApp {
                     ),
             )
             .child(
-                v_flex()
-                    .h(px(56.))
-                    .mt_1()
-                    .justify_center()
-                    .child(
-                        div()
-                            .font_family("Bahnschrift")
-                            .text_size(px(30.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(TEXT))
-                            .child("RTX VIDEO HDR"),
-                    ),
+                v_flex().h(px(56.)).mt_1().justify_center().child(
+                    div()
+                        .font_family("Bahnschrift")
+                        .text_size(px(30.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(TEXT))
+                        .child("RTX VIDEO HDR"),
+                ),
             )
             .child(
                 div()
