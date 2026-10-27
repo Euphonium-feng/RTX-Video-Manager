@@ -2602,13 +2602,24 @@ fn spectrum_bar() -> impl IntoElement {
     h_flex()
         .w_full()
         .h(px(12.))
-        .overflow_hidden()
-        .rounded(px(5.))
-        .children(
-            [0x16262B, 0x21464B, 0x3C9299, 0x9BE7E9]
-                .into_iter()
-                .map(|color| div().flex_1().h_full().bg(rgb(color))),
-        )
+        .child(spectrum_segment(0x16262B, true, false))
+        .child(spectrum_segment(0x21464B, false, false))
+        .child(spectrum_segment(0x3C9299, false, false))
+        .child(spectrum_segment(0x9BE7E9, false, true))
+}
+
+fn spectrum_segment(color: u32, first: bool, last: bool) -> impl IntoElement {
+    let segment = div().flex_1().h_full().bg(rgb(color));
+    let segment = if first {
+        segment.rounded_l(px(5.))
+    } else {
+        segment
+    };
+    if last {
+        segment.rounded_r(px(5.))
+    } else {
+        segment
+    }
 }
 
 fn vsr_ladder() -> impl IntoElement {

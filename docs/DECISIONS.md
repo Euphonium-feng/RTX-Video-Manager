@@ -215,5 +215,7 @@ at roughly eight percent opacity. This keeps the layered depth without adding im
 assets, animations, or a second visual system.
 
 The HDR spectrum bar has no dark outline on its rounded cap. GPUI's one-pixel border
-left a visibly dark seam between the bright final segment and the rounded edge, so the
-bar relies on clipping and anti-aliasing alone for a clean endpoint.
+left a visibly dark seam between the bright final segment and rounded it independently:
+the first segment rounds its left corners and the bright final segment rounds its right
+corners. Removing the border without segment-level radii produced square endpoints,
+so clipping the parent alone is not sufficient in this GPUI version.
