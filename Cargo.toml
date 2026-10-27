@@ -1,17 +1,17 @@
 [package]
-name = "rtx-hdr-switch"
+name = "rtx-video-manager"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-description = "A lightweight global shortcut for NVIDIA RTX Video HDR"
+description = "A lightweight global control for NVIDIA RTX Video HDR and VSR"
 build = "build.rs"
 
 [lib]
-name = "rtx_hdr_switch"
+name = "rtx_video_manager"
 path = "src/lib.rs"
 
 [[bin]]
-name = "RtxHdrSwitch"
+name = "RtxVideoManager"
 path = "src/main.rs"
 
 [workspace]

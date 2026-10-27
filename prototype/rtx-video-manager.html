@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RTX Video Manager · GPUI Prototype</title>
+  <style>
+    :root {
+      --ink: #0b1215;
+      --panel: #121c20;
+      --raised: #19262c;
+      --rule: #2a4046;
+      --text: #edf5f4;
+      --muted: #8ca1a5;
+      --subtle: #64797d;
+      --signal: #65dde6;
+      --signal-hi: #84e9f0;
+      --warm: #f0b35c;
+      --danger: #ff7b70;
+      --ui-scale: 1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 72px 24px 32px;
+      color: var(--text);
+      font-family: "Microsoft YaHei UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(101,221,230,.13), transparent 30rem),
+        radial-gradient(circle at 92% 100%, rgba(240,179,92,.10), transparent 34rem),
+        #05090b;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .18;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 36px 36px;
+      mask-image: linear-gradient(to bottom, black, transparent 78%);
+    }
+    .prototype-tools {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      z-index: 20;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      transform: translateX(-50%);
+      padding: 7px 10px;
+      border: 1px solid #294046;
+      border-radius: 12px;
+      color: #8ca1a5;
+      background: rgba(11,18,21,.94);
+      font: 11px "Cascadia Mono", monospace;
+      box-shadow: 0 18px 50px rgba(0,0,0,.38);
+    }
+    .prototype-tools button,
+    .prototype-tools select {
+      border: 1px solid #31494f;
+      border-radius: 7px;
+      padding: 5px 8px;
+      color: #dce9e9;
+      background: #17252a;
+      font: inherit;
+    }
+    .prototype-tools button.active { border-color: #65dde6; color: #65dde6; }
+    .app {
+      width: 860px;
+      height: 620px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #263b41;
+      border-radius: 13px;
+      background: var(--ink);
+      box-shadow:
+        0 46px 100px rgba(0,0,0,.58),
+        0 0 0 1px rgba(101,221,230,.04) inset;
+      transform: scale(var(--ui-scale));
+      transform-origin: center center;
+    }
+    .titlebar {
+      height: 34px;
+      flex: 0 0 34px;
+      display: flex;
+      align-items: center;
+      padding-left: 12px;
+      gap: 8px;
+      border-bottom: 1px solid var(--rule);
+      background: linear-gradient(90deg, #0f191d, #0b1215);
+      user-select: none;
+    }
+    .app-icon { width: 18px; height: 18px; }
+    .title { font-size: 12px; font-weight: 650; color: #c6d4d5; }
+    .subtitle { font-size: 11px; color: var(--muted); }
+    .window-actions { margin-left: auto; height: 100%; display: flex; }
+    .window-actions span {
+      width: 35px; display: grid; place-items: center; color: var(--muted); font-size: 16px;
+    }
+    .tabs {
+      height: 42px;
+      flex: 0 0 42px;
+      display: flex;
+      gap: 4px;
+      padding: 5px 28px 0;
+      border-bottom: 1px solid rgba(42,64,70,.55);
+    }
+    .tab {
+      border: 0;
+      border-radius: 8px 8px 0 0;
+      padding: 0 17px;
+      color: var(--muted);
+      background: transparent;
+      font: 600 11px "Microsoft YaHei UI", sans-serif;
+      cursor: pointer;
+    }
+    .tab:hover { color: var(--text); background: #101a1e; }
+    .tab.active {
+      color: var(--text);
+      background: var(--raised);
+      box-shadow: 0 -2px 0 var(--signal) inset;
+    }
+    main {
+      min-height: 0;
+      flex: 1;
+      padding: 14px 28px 12px;
+      overflow: hidden;
+    }
+    .page { height: 100%; animation: reveal .16s ease-out both; }
+    .page[hidden] { display: none; }
+    #page-hdr { display: flex; flex-direction: column; gap: 12px; }
+    #page-hdr[hidden] { display: none; }
+    #page-hdr .split { flex: 0 0 auto; }
+    #page-hdr .tuning-panel {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    @keyframes reveal {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: 12px;
+      height: 100%;
+    }
+    .overview-grid .hero { min-height: 0; }
+    .hero, .panel {
+      position: relative;
+      border: 1px solid var(--rule);
+      border-radius: 14px;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.018), transparent 55%),
+        var(--panel);
+    }
+    .hero {
+      min-height: 252px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -54px;
+      bottom: -80px;
+      width: 220px;
+      height: 220px;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      opacity: .08;
+    }
+    .vsr { color: var(--warm); }
+    .hdr { color: var(--signal); }
+    .hero-top { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .eyebrow {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: .02em;
+    }
+    .badge {
+      margin-left: auto;
+      padding: 5px 9px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      color: currentColor;
+      background: rgba(255,255,255,.025);
+      font-size: 10px;
+    }
+    .hero h1 {
+      margin: 9px 0 5px;
+      color: var(--text);
+      font: 600 28px/1.04 Bahnschrift, sans-serif;
+      letter-spacing: -.02em;
+    }
+    .overview-grid .hero h1 { min-height: 46px; display: flex; align-items: center; }
+    .overview-grid .vsr h1 { font-size: 22px; line-height: 1.05; }
+    .detail { min-height: 35px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .readout {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      margin-top: 13px;
+      color: var(--text);
+      font-family: "Cascadia Mono", monospace;
+    }
+    .readout strong { font-size: 24px; font-weight: 600; }
+    .readout span { color: var(--subtle); font-size: 9px; padding-bottom: 3px; }
+    .switch {
+      position: relative;
+      width: 46px;
+      height: 25px;
+      flex: 0 0 auto;
+      border: 1px solid #3a555b;
+      border-radius: 999px;
+      background: #0e171a;
+      cursor: pointer;
+    }
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: #7a8c90;
+      transition: transform .14s ease, background .14s ease;
+    }
+    .switch.on { border-color: rgba(101,221,230,.55); background: rgba(101,221,230,.18); }
+    .vsr .switch.on { border-color: rgba(240,179,92,.55); background: rgba(240,179,92,.18); }
+    .switch.on::after { transform: translateX(21px); background: var(--signal); }
+    .vsr .switch.on::after { background: var(--warm); }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid rgba(42,64,70,.65);
+    }
+    .mini-visual { margin-top: 16px; }
+    .spectrum {
+      height: 12px;
+      border-radius: 5px;
+      overflow: hidden;
+      background: linear-gradient(90deg, #16262b 0 24%, #21464b 24% 52%, #3c9299 52% 78%, #9be7e9 78% 100%);
+      box-shadow: 0 0 18px rgba(101,221,230,.10);
+    }
+    .spectrum-labels, .ladder-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      color: var(--subtle);
+      font: 8px "Cascadia Mono", monospace;
+    }
+    .ladder { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; height: 12px; }
+    .ladder i {
+      display: block;
+      border: 1px solid #685a42;
+      border-radius: 4px;
+      background: rgba(240,179,92,.16);
+    }
+    .ladder i:nth-child(2) { background: rgba(240,179,92,.24); }
+    .ladder i:nth-child(3) { background: rgba(240,179,92,.34); }
+    .ladder i:nth-child(4) { background: rgba(240,179,92,.46); }
+    .ladder i:nth-child(5) { background: rgba(240,179,92,.74); }
+    .overview-summary {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1.2fr 1.6fr 1fr;
+      min-height: 78px;
+      padding: 0 16px;
+    }
+    .summary-cell {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      padding: 0 18px;
+      border-left: 1px solid rgba(42,64,70,.7);
+    }
+    .summary-cell:first-child { border-left: 0; padding-left: 2px; }
+    .summary-cell span { color: var(--subtle); font: 8px "Cascadia Mono", monospace; letter-spacing: .04em; }
+    .summary-cell strong { color: #dbe8e9; font-size: 10px; font-weight: 600; }
+    .hint { color: var(--subtle); font: 9px "Cascadia Mono", monospace; line-height: 1.55; }
+    .split { display: grid; grid-template-columns: 1fr 212px; gap: 12px; }
+    .stack { display: grid; gap: 12px; }
+    .panel { padding: 16px; }
+    .panel-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; }
+    .panel-heading h2 { margin: 0; font-size: 12px; }
+    .micro { color: var(--subtle); font: 9px "Cascadia Mono", monospace; }
+    .panel-heading .micro { margin-left: auto; }
+    .quality-row { display: flex; gap: 8px; }
+    .quality {
+      min-width: 78px;
+      padding: 10px 12px;
+      border: 1px solid #334d53;
+      border-radius: 10px;
+      color: #d9e7e8;
+      background: var(--raised);
+      font: 600 12px "Cascadia Mono", monospace;
+      cursor: pointer;
+    }
+    .quality.active { border-color: var(--warm); color: #0b1215; background: var(--warm); }
+    .quality-note { margin-top: 14px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+    .active-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .active-strip b { color: var(--warm); font: 600 12px "Cascadia Mono", monospace; }
+    .tuning-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; }
+    .field label { display: flex; justify-content: space-between; margin-bottom: 7px; color: var(--muted); font-size: 10px; }
+    .meter { height: 5px; border-radius: 999px; background: #1d3035; overflow: hidden; }
+    .meter i { display: block; height: 100%; background: var(--signal); }
+    .range { display: flex; justify-content: space-between; margin-top: 6px; color: var(--subtle); font: 8px "Cascadia Mono", monospace; }
+    .settings { display: grid; gap: 0; }
+    .setting-row {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(42,64,70,.7);
+    }
+    .setting-row:last-child { border-bottom: 0; }
+    .setting-label { width: 90px; color: var(--muted); font-size: 11px; }
+    .keys { display: flex; gap: 5px; }
+    kbd {
+      min-width: 29px;
+      padding: 4px 7px;
+      border: 1px solid #38535a;
+      border-radius: 6px;
+      color: #dce9e9;
+      background: #19272c;
+      font: 10px "Cascadia Mono", monospace;
+      text-align: center;
+    }
+    .setting-row .switch { margin-left: auto; }
+    .diagnostics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; }
+    .diag { min-width: 0; }
+    .diag span { display: block; color: var(--subtle); font-size: 8px; margin-bottom: 3px; }
+    .diag code { display: block; overflow: hidden; color: #c8d6d7; font: 9px "Cascadia Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+    footer {
+      height: 48px;
+      flex: 0 0 48px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 28px;
+      border-top: 1px solid var(--rule);
+      color: var(--subtle);
+      font: 9px "Cascadia Mono", monospace;
+    }
+    footer .actions { margin-left: auto; display: flex; gap: 8px; }
+    .btn {
+      border: 1px solid #334c52;
+      border-radius: 7px;
+      padding: 8px 13px;
+      color: #e4eeee;
+      background: transparent;
+      font: 600 10px "Microsoft YaHei UI", sans-serif;
+    }
+    .btn.primary { border-color: var(--signal); color: var(--ink); background: var(--signal); }
+    .readonly .quality, .readonly .btn.primary, .readonly .hdr .switch, .readonly .vsr .switch { opacity: .42; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div class="prototype-tools">
+    <span>原型</span>
+    <button data-zoom="1" class="active">100%</button>
+    <button data-zoom="1.25">125%</button>
+    <button data-zoom="1.5">150%</button>
+    <select id="stateMode">
+      <option value="normal">正常运行</option>
+      <option value="readonly">只读兼容</option>
+      <option value="loading">读取中</option>
+      <option value="error">后端错误</option>
+    </select>
+  </div>
+
+  <div class="app" id="app">
+    <header class="titlebar">
+      <svg class="app-icon" viewBox="0 0 512 512" aria-hidden="true">
+        <rect x="20" y="20" width="472" height="472" rx="112" fill="#0b1215" stroke="#2a4046" stroke-width="14"/>
+        <rect x="96" y="122" width="320" height="256" rx="28" fill="#0f181c" stroke="#edf5f4" stroke-width="19"/>
+        <path d="M196 206 256 282l60-76" fill="none" stroke="url(#g)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs><linearGradient id="g"><stop stop-color="#65dde6"/><stop offset="1" stop-color="#f0b35c"/></linearGradient></defs>
+      </svg>
+      <span class="title">RTX Video Manager</span><span class="subtitle">· 后台运行中</span>
+      <div class="window-actions"><span>−</span><span>×</span></div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-page="overview">总览</button>
+      <button class="tab" data-page="hdr">HDR</button>
+      <button class="tab" data-page="vsr">VSR</button>
+      <button class="tab" data-page="settings">设置</button>
+      <button class="tab" data-page="diagnostics">诊断</button>
+    </nav>
+
+    <main>
+      <section class="page" id="page-overview">
+        <div class="overview-grid">
+          <article class="hero hdr">
+            <div class="hero-top"><span class="dot"></span><span class="eyebrow">RTX VIDEO HDR 已开启</span><span class="badge">● 已开启</span></div>
+            <h1>RTX VIDEO HDR</h1>
+            <div class="detail">当前视频正在以 HDR10 输出。峰值亮度由显示器能力动态读取。</div>
+            <div class="readout"><strong>1440</strong><span>NITS · 400–1440</span></div>
+            <div class="mini-visual">
+              <div class="spectrum"></div>
+              <div class="spectrum-labels"><span>400</span><span>1440</span></div>
+            </div>
+            <div class="hero-actions"><button class="switch on" data-toggle="hdr" aria-label="切换 HDR"></button><div class="hint">Ctrl+Alt+H<br>点击开关立即生效</div></div>
+          </article>
+          <article class="hero vsr">
+            <div class="hero-top"><span class="dot"></span><span class="eyebrow">RTX VSR · 质量 4</span><span class="badge">● 已开启</span></div>
+            <h1>RTX VIDEO<br>SUPER RESOLUTION</h1>
+            <div class="detail">已开启，等待兼容视频开始播放。数字越高，画质越好、GPU 占用越高。</div>
+            <div class="readout"><strong>4</strong><span>QUALITY · AUTO 可选</span></div>
+            <div class="mini-visual">
+              <div class="ladder"><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="ladder-labels"><span>AUTO</span><span>1</span><span>2</span><span>3</span><span>4</span></div>
+            </div>
+            <div class="hero-actions"><button class="switch on" data-toggle="vsr" aria-label="切换 VSR"></button><div class="hint">Ctrl+Alt+V<br>当前视频未激活</div></div>
+          </article>
+          <aside class="panel overview-summary">
+            <div class="summary-cell"><span>NVIDIA BACKEND</span><strong>已验证可写 · 0x318 + 0x315</strong></div>
+            <div class="summary-cell"><span>CURRENT SIGNAL</span><strong>HDR10 输出中 · VSR 等待兼容视频</strong></div>
+            <div class="summary-cell"><span>GLOBAL HOTKEYS</span><strong>3 / 3 已注册</strong></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="page" id="page-hdr" hidden>
+        <div class="split">
+          <article class="hero hdr">
+            <div class="hero-top"><span class="dot"></span><span class="eyebrow">RTX VIDEO HDR 已开启</span><span class="badge">● 已开启</span></div>
+            <h1>RTX VIDEO HDR</h1>
+            <div class="detail">当前视频正在以 HDR10 输出。</div>
+            <div class="readout"><strong>1440</strong><span>NITS · 400–1440</span></div>
+            <div class="hero-actions"><button class="switch on"></button><div class="hint">Ctrl+Alt+H<br>显示驱动实时范围</div></div>
+          </article>
+          <aside class="panel">
+            <div class="panel-heading"><h2>驱动信息</h2><span class="micro">0x318</span></div>
+            <div class="diag"><span>兼容模式</span><code>已验证可写</code></div>
+            <div class="diag" style="margin-top:12px"><span>NVCpl</span><code>8.17.15.5527</code></div>
+          </aside>
+        </div>
+        <div class="panel tuning-panel">
+          <div class="panel-heading"><h2>HDR 调校</h2><span class="micro">NVIDIA 0x318 · 独立应用</span></div>
+          <div class="tuning-grid">
+            <div class="field"><label><span>峰值亮度</span><b>1440 nits</b></label><div class="meter"><i style="width:100%"></i></div><div class="range"><span>400</span><span>1440</span></div></div>
+            <div class="field"><label><span>对比度</span><b>0</b></label><div class="meter"><i style="width:50%"></i></div><div class="range"><span>−100</span><span>+100</span></div></div>
+            <div class="field"><label><span>中间灰</span><b>50</b></label><div class="meter"><i style="width:50%"></i></div><div class="range"><span>0</span><span>100</span></div></div>
+            <div class="field"><label><span>饱和度</span><b>0</b></label><div class="meter"><i style="width:50%"></i></div><div class="range"><span>−100</span><span>+100</span></div></div>
+          </div>
+          <div class="range" style="margin-top:auto"><span>当前峰值 1440 nits · 写入后逐项回读，失败自动回滚</span></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-vsr" hidden>
+        <div class="split">
+          <article class="hero vsr">
+            <div class="hero-top"><span class="dot"></span><span class="eyebrow">RTX VSR 已开启 · 质量 4</span><span class="badge">● 已开启</span></div>
+            <h1>RTX VIDEO<br>SUPER RESOLUTION</h1>
+            <div class="detail">已开启，等待兼容视频开始播放。支持 Auto 与 1–4 质量档位。</div>
+            <div class="readout"><strong>4</strong><span>QUALITY · 当前生效</span></div>
+            <div class="hero-actions"><button class="switch on"></button><div class="hint">Ctrl+Alt+V<br>切换不会改变 HDR 设置</div></div>
+          </article>
+          <aside class="panel">
+            <div class="panel-heading"><h2>当前视频</h2><span class="micro">0x315</span></div>
+            <div class="diag"><span>处理状态</span><code>等待兼容视频</code></div>
+            <div class="diag" style="margin-top:12px"><span>活动档位</span><code>无</code></div>
+          </aside>
+        </div>
+        <div class="panel" style="margin-top:12px;height:198px">
+          <div class="panel-heading"><h2>VSR 质量</h2><span class="micro">NVIDIA 0x315 / 0x317</span></div>
+          <div class="quality-row">
+            <button class="quality">自动</button><button class="quality">1</button><button class="quality">2</button><button class="quality">3</button><button class="quality active">4</button>
+          </div>
+          <div class="quality-note">关闭 VSR 时，选择的档位只保存为“下次启用质量”，不会调用 NVIDIA 写接口。</div>
+          <div class="active-strip"><span class="dot" style="color:var(--warm)"></span><span>当前视频生效档位</span><b>无活动视频</b></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-settings" hidden>
+        <div class="panel settings">
+          <div class="setting-row"><span class="setting-label">切换 HDR</span><div class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>H</kbd></div><button class="btn" style="margin-left:auto">录制</button></div>
+          <div class="setting-row"><span class="setting-label">切换 VSR</span><div class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>V</kbd></div><button class="btn" style="margin-left:auto">录制</button></div>
+          <div class="setting-row"><span class="setting-label">唤起控制台</span><div class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>G</kbd></div><button class="btn" style="margin-left:auto">录制</button></div>
+          <div class="setting-row"><span class="setting-label">启动</span><span class="detail" style="min-height:0">登录 Windows 时自动启动，只启动后台托盘</span><button class="switch on" style="margin-left:auto"></button></div>
+          <div class="setting-row"><span class="setting-label">反馈</span><span class="detail" style="min-height:0">切换时显示 500 ms 半透明系统浮层</span><button class="switch on" style="margin-left:auto"></button></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-diagnostics" hidden>
+        <div class="panel" style="height:100%">
+          <div class="panel-heading"><h2>系统诊断</h2><span class="micro">PROTOCOL v4</span></div>
+          <div class="diagnostics">
+            <div class="diag"><span>兼容模式</span><code>已验证可写</code></div>
+            <div class="diag"><span>DLL 版本</span><code>8.17.15.5527</code></div>
+            <div class="diag"><span>读取探针</span><code>HDR + VSR 通过</code></div>
+            <div class="diag"><span>HDR 状态</span><code>enabled=1 active=1</code></div>
+            <div class="diag"><span>HDR 峰值</span><code>1440 · 400–1440</code></div>
+            <div class="diag"><span>HDR 调校</span><code>50 / 0 / 0</code></div>
+            <div class="diag"><span>VSR 状态</span><code>quality=4 status=0</code></div>
+            <div class="diag"><span>VSR 活动档位</span><code>none</code></div>
+            <div class="diag"><span>实际 SHA-256</span><code>eee812ab…9f0</code></div>
+            <div class="diag"><span>原始 0x318</span><code>0100000001000000…</code></div>
+            <div class="diag"><span>原始 0x315</span><code>0100000004000000…</code></div>
+            <div class="diag"><span>原始 0x317</span><code>04000000</code></div>
+          </div>
+          <div class="hint" style="margin-top:20px">最近错误：无</div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span id="footerState">HDR 0x318 + VSR 0x315 · 后端已连接</span>
+      <div class="actions"><button class="btn">恢复默认</button><button class="btn">保存更改</button><button class="btn primary">应用调校</button></div>
+    </footer>
+  </div>
+
+  <script>
+    const app = document.getElementById('app');
+    for (const tab of document.querySelectorAll('.tab')) {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === tab));
+        document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== `page-${tab.dataset.page}`);
+      });
+    }
+    document.querySelectorAll('.quality').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.quality').forEach(item => item.classList.toggle('active', item === button));
+      });
+    });
+    document.querySelectorAll('.switch').forEach(button => {
+      button.addEventListener('click', () => button.classList.toggle('on'));
+    });
+    for (const button of document.querySelectorAll('[data-zoom]')) {
+      button.addEventListener('click', () => {
+        document.documentElement.style.setProperty('--ui-scale', button.dataset.zoom);
+        document.querySelectorAll('[data-zoom]').forEach(item => item.classList.toggle('active', item === button));
+      });
+    }
+    document.getElementById('stateMode').addEventListener('change', event => {
+      app.classList.toggle('readonly', event.target.value === 'readonly');
+      document.getElementById('footerState').textContent = event.target.value === 'readonly'
+        ? 'HDR 0x318 + VSR 0x315 · 只读兼容模式'
+        : event.target.value === 'loading'
+          ? '正在读取 NVIDIA 视频增强状态'
+          : event.target.value === 'error'
+            ? '后台连接异常 · 请检查诊断'
+            : 'HDR 0x318 + VSR 0x315 · 后端已连接';
+    });
+  </script>
+</body>
+</html>

@@ -44,7 +44,7 @@ active, or falling back to Windows HDR.
 ## ADR-006: Native 500 ms toggle overlay
 
 Show a small native Win32 popup at the bottom center of the active monitor after a
-successful toggle. The window is topmost, uses a rounded custom-drawn capsule, and
+successful HDR or VSR toggle. The window is topmost, uses a rounded custom-drawn capsule, and
 uses `WS_EX_NOACTIVATE` plus `SW_SHOWNOACTIVATE` so the shortcut does not disturb
 the foreground video. Keep it compact and use 50% layered-window opacity so it does
 not cover the video. Hide it with a 500 ms timer.
@@ -55,11 +55,18 @@ would add substantial runtime weight.
 
 ## ADR-007: On-demand GPUI console with a native host
 
-Keep `RtxHdrSwitch.exe` as a GPUI-free Win32 process and run `RtxHdrSettings.exe`
+Keep `RtxVideoManager.exe` as a GPUI-free Win32 process and run
+`RtxVideoManagerConsole.exe`
 only while the control console is open. The console communicates with the host over
 a one-client, same-user named pipe; it never loads NvCpl or writes registry values.
 Tray, hotkey registration, and the 500 ms overlay stay native because GPUI has no
 tray API and spawning a renderer for every shortcut would add latency and memory.
+All major console surfaces share the same rounded panel treatment. On the HDR page,
+the tuning panel flexes into the remaining height and keeps a bottom status line, so
+its rounded lower corners stay visible above the footer instead of being clipped.
+The overview deliberately mirrors the HTML prototype's two-column hero layout and
+summary rail rather than stacking two generic full-width rows; the detail pages reuse
+the same card geometry with a narrow driver/video information column.
 
 Rejected: putting GPUI in the resident host, implementing a WebView/Tauri console,
 or replacing native system chrome with per-toggle GPUI windows.
@@ -84,9 +91,9 @@ Rejected: writing from the host UI thread while the IPC thread blocks in `ReadFi
 
 ## ADR-010: Embed a calibration-ring product icon
 
-Use a graphite rounded tile, broken ice-blue calibration ring, white `H`, and amber
-marker as the console identity. Keep the SVG as the editable source and embed a
-multi-resolution ICO into `RtxHdrSettings.exe` through its own resource script.
+Originally used a graphite rounded tile, broken ice-blue calibration ring, white `H`,
+and amber marker. The dual-feature identity in ADR-016 supersedes this artwork; the
+embedding and multi-resolution ICO strategy remains.
 
 Rejected: shipping an external icon file, relying on a generic executable icon, or
 using the small tray-state glyphs as the full-size application identity. The dedicated
@@ -115,11 +122,11 @@ after apply.
 
 ## ADR-013: Separate console shortcut and custom title-bar controls
 
-Register `Ctrl+Alt+G` as a second configurable global shortcut that opens or
+Register `Ctrl+Alt+G` as a configurable global shortcut that opens or
 foregrounds the console. When the console is already active, the same shortcut closes
 it to the tray. The GPUI window decides using `Window::is_window_active`, so the host
-does not need to guess which process owns the foreground. Register both shortcuts
-together and roll both back if either fails. Render a custom title bar with minimize
+does not need to guess which process owns the foreground. Register HDR, VSR, and
+console shortcuts together and roll all three back if any fails. Render a custom title bar with minimize
 and close only because the GPUI window-controls helper always advertises maximize on
 Windows even for non-resizable windows.
 
@@ -142,3 +149,84 @@ then allocates an aligned `u64` buffer using the size returned by
 `CryptMsgGetParam(CMSG_SIGNER_CERT_INFO_PARAM)`. Passing only
 `size_of::<CERT_INFO>()` validates in unit tests but fails on the real NVIDIA
 signature because issuer and serial payloads follow the fixed structure.
+
+## ADR-015: Independent VSR control with fixed-field verification
+
+Expose RTX VSR as an independent switch and quality selector backed by NVIDIA info
+setting `0x315` and value setting `0x317`. `0x315` is 20 bytes: support at `+0x00`,
+quality at `+0x04`, status at `+0x08`, and eight uninterpreted trailing bytes.
+`0x317` is the four-byte quality value used for writes.
+
+Encode `Off=0`, `Level1..Level4=1..4`, and `Auto=5`. A write changes only `0x317`,
+commits with `NvCplApiExecute(0x10000, 0, -1)`, verifies the quality and support
+fields, and restores plus recommits the previous quality on failure. Never compare or
+preserve the volatile trailing bytes as a write condition or call setting `0x31b`.
+
+Rejected: deriving VSR quality from undocumented `0x31b` data, writing a whole
+20-byte info block, treating `SetSetting` success as proof of activation, or coupling
+VSR writes to HDR tuning.
+
+Evidence: on 2026-10-26 a reversible probe changed `0x317` from `4` to `3`, committed,
+read `0x315` quality `3`, restored `0x317` to `4`, committed, and read quality `4`
+again with no HDR field change.
+
+## ADR-016: Dual-channel product identity and compatibility identifiers
+
+Rename the outward product, binaries, package names, manifest identity, ZIP, window
+titles, documentation, and icon to `RTX Video Manager`. Use
+`RtxVideoManager.exe` and `RtxVideoManagerConsole.exe`. The new icon is a video frame
+with cyan HDR and amber VSR enhancement channels, plus a calibration marker; keep the
+SVG master and generate on/off/error ICO variants.
+
+Keep the old registry key `Software\RTXHDRSwitch`, startup value name `RtxHdrSwitch`,
+single-instance mutex, window classes, and named-pipe family as compatibility
+identifiers. Renaming them would orphan existing settings and could create a second
+startup entry during upgrades.
+
+Rejected: changing internal identifiers together with the display name, keeping the
+old single-purpose `H` icon, or shipping only the console icon without tray-state
+variants.
+
+## ADR-017: Keep long identifiers out of compact detail cards
+
+The HDR detail page reserves its narrow driver card for compatibility mode, DLL
+version, and probe result. Full hashes and raw NVIDIA records stay in diagnostics,
+where they can use a full-width row without forcing text through a card edge. The VSR
+quality panel fills the remaining page height and uses a compact Auto/1-2/3-4 guide
+plus the live `0x315` active-quality strip, avoiding both a fixed underfilled card and
+an unstructured empty lower page.
+
+Rejected: silently clipping a 64-character hash in the driver card, shrinking the
+whole detail page until sparse content looked dense, or duplicating raw diagnostic
+payloads in every compact card.
+
+The overview also reserves one fixed title block for both feature cards. HDR keeps its
+single-line title centered in that block, while VSR renders `RTX VIDEO` and
+`SUPER RESOLUTION` as two deliberate lines. This keeps the brightness spectrum and VSR
+quality ladder labels on one baseline. The HDR detail page lists only the HDR shortcut
+because the VSR shortcut belongs to the separate VSR page and tray toggle.
+The spectrum labels row keeps only the driver-derived lower and upper endpoints at the
+two ends of the scale. `基准`, the repeated midpoint range, and `动态范围` were removed
+because they did not describe separate actions or values.
+
+The production GPUI cards reproduce the HTML prototype's background calibration arc as
+a single clipped `220 x 220` circle at the lower-right edge, using the same signal color
+at roughly eight percent opacity. This keeps the layered depth without adding image
+assets, animations, or a second visual system.
+
+Action buttons use an explicit wrapper surface because `ButtonCustomVariant`'s custom
+fill rendered too faint against the hero panels. Enabled close actions use the same
+raised background and rule border as compact information cells. VSR quality choices use
+that surface when unselected and a solid warm fill with dark text when selected. The
+button itself contributes interaction and accessibility while the wrapper owns the
+visible color, so the control remains legible in enabled, disabled, and read-only states.
+
+The footer keeps global status and reconnect affordances on all pages, but settings-only
+commands are shown only on the settings page. `恢复默认` and `保存更改` no longer appear
+under HDR, VSR, overview, or diagnostics where they do not apply.
+
+The HDR spectrum bar has no dark outline on its rounded cap. GPUI's one-pixel border
+left a visibly dark seam between the bright final segment and rounded it independently:
+the first segment rounds its left corners and the bright final segment rounds its right
+corners. Removing the border without segment-level radii produced square endpoints,
+so clipping the parent alone is not sufficient in this GPUI version.

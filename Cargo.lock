@@ -5284,18 +5284,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "rtx-hdr-settings"
+name = "rtx-video-manager-console"
 version = "0.1.0"
 dependencies = [
  "embed-resource 2.5.2",
  "gpui-kit",
- "rtx-hdr-switch",
+ "rtx-video-manager",
  "serde_json",
  "windows-sys 0.59.0",
 ]
 
 [[package]]
-name = "rtx-hdr-switch"
+name = "rtx-video-manager"
 version = "0.1.0"
 dependencies = [
  "embed-resource 2.5.2",
