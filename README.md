@@ -14,7 +14,6 @@
 
 `Ctrl+Alt+H` 切换 HDR · `Ctrl+Alt+V` 切换 VSR · `Ctrl+Alt+G` 唤起/收起控制台 · 500 ms 浮层 · 双通道严格回滚
 
-<img src="assets/rtx-video-manager.png" width="180" alt="RTX Video Manager dual-channel icon">
 
 </div>
 
