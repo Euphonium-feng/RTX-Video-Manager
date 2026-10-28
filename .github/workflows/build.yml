@@ -39,8 +39,7 @@ jobs:
 
       - name: Format
         shell: pwsh
-        run: |
-          cargo fmt --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy
         shell: pwsh

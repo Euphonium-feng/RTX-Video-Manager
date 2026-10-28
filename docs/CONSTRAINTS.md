@@ -16,8 +16,17 @@
 - Only `%ProgramW6432%\NVIDIA Corporation\NVIDIA App\NvCpl\nvcpl.dll` is eligible.
   Its SHA-256 must be
   `EEE812AB8FF74975D3CC7FE77130F5766911B6CA2D9C42C1156376A6C13F79F0`.
-- Unknown NVIDIA versions, failed signature checks, missing exports, or invalid
-  read data make the application read-only.
+- An unknown NVIDIA hash is eligible only when Authenticode verifies, the signer
+  organization is `NVIDIA Corporation`, every required export exists, and the
+  48-byte `0x318` read probe parses correctly. That combination is read-only.
+- An invalid signature or signer, missing export, failed read probe, or malformed
+  HDR data fails closed and does not enter read-only compatibility mode.
+- Read-only compatibility must never call `NvCplApiSetSetting`,
+  `NvCplApiExecute`, or persist a proposed setting. The UI disables toggling and
+  tuning, while status, diagnostics, copy-diagnostics, and reset-to-draft remain
+  available.
+- Unknown builds cannot become writable through a runtime override, online
+  compatibility list, telemetry, or experimental write mode.
 - The NVIDIA worker must initialize an STA COM apartment and confirm
   `NvCplApiIsUxdServiceRunning` before `NvCplApiInit`; writes are refused if either
   prerequisite fails.
@@ -32,3 +41,5 @@
   treated interchangeably.
 - GPUI must be pinned to `gpui-kit = "=0.8.0"` and its pinned GPUI snapshot; do not
   mix in official `gpui 0.2.2` or experimental `gpui-fast`.
+- Host/console IPC protocol version `3` is required for compatibility diagnostics.
+  Mixed protocol versions must instruct the user to re-extract both executables.

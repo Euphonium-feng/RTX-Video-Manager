@@ -2,8 +2,8 @@
 
 ## In Progress
 
-- Validate the DPI-corrected console build and finish the remaining manual state
-  matrix.
+- Review and merge `feature/readonly-compatibility` after user approval; the branch
+  is intentionally not auto-merged.
 
 ## Verified
 
@@ -50,9 +50,43 @@
   windows close, background windows activate. Final artifact verification remains.
 - The runnable calibration-dashboard prototype is in `prototype/gpui-console.html`
   and has been rendered at 800 x 760 for visual review.
+- `feature/readonly-compatibility` implements unknown-build read-only mode, protocol
+  version `3`, compatibility diagnostics, raw `0x318` reporting, and disabled write
+  controls. The host rejects tray, hotkey, IPC, and legacy-window writes before the
+  worker queue when the mode is read-only.
+- GitHub Actions run `40300042727` is green for commit `7aa7e9f`; it validated the
+  first read-only compatibility implementation. It is an intermediate build, not the
+  final artifact for this branch.
+- GitHub Actions run `40318079147` is green for final commit `c57feef`; strict
+  `fmt --check`, Clippy, tests, both release builds, packaging, and artifact upload
+  all passed.
+- Final artifact ZIP SHA-256 is
+  `075BEBCAB99388F12B939EE456CF37B3D781C3B030A6C90DD1E658488E287888`.
+  Host SHA-256 is
+  `FC5C1C740A5C89CD43C3AACFA1F10AB41D5D30E6AFE1FF9247420036847A4546`
+  (516,096 bytes); console SHA-256 is
+  `D5A58D94DB2DF58824A72ECE805A508C54F41F2206C0FAD115C4F0294575439F`
+  (17,759,232 bytes).
+- A real-machine run of the final host passed Authenticode and NVIDIA signer
+  organization extraction, loaded the verified-hash DLL as writable, and opened the
+  GPUI diagnostics page. It showed DLL `8.17.15.5527`, probe `通过`, actual hash equal
+  to the allowed hash, `已验证可写`, and raw `0x318` diagnostics. Console private
+  memory was 95.74 MiB.
+- A protocol-3 reversible tuning probe changed `1440 / 50 / 0 / 0` to
+  `1400 / 45 / 5 / -5`, verified the readback, and restored the original values.
+- The real-machine run caught a variable-size `CERT_INFO` buffer bug in signer
+  extraction. Commit `c57feef` allocates the size reported by
+  `CryptMsgGetParam(CMSG_SIGNER_CERT_INFO_PARAM)` and the final artifact passed the
+  real DLL check.
 
 ## Pending
 
+- Verify the unknown-build read-only UI against a real unknown signed DLL when such a
+  build is available. This phase intentionally did not replace the local NVIDIA file;
+  classification, IPC, and disabled-write behavior are covered by automated tests.
+- Manually click `复制诊断` after any remaining layout/UX review. The formatted text
+  is unit-tested, but the interactive clipboard click was not exercised because
+  computer-use verification was stopped.
 - Rebuild and visually verify the DPI-corrected console at the reference 125% scale;
   confirm the removed hero meter, visible ranges for all four controls, always-default
   `还原`, and absent maximize control.
@@ -72,5 +106,4 @@
 
 ## Next Action
 
-Push the DPI and UX corrections, wait for green CI, then download the artifact and run
-the remaining manual state matrix plus the 500 ms overlay visual check.
+Review draft PR #1, inspect the review diff, and merge only after explicit approval.

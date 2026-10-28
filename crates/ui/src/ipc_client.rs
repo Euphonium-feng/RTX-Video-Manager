@@ -16,7 +16,7 @@ const FILE_GENERIC_READ_WRITE: u32 = 0xC000_0000;
 #[derive(Debug)]
 pub enum ClientEvent {
     Connected,
-    Event(HostEvent),
+    Event(Box<HostEvent>),
     Disconnected(String),
 }
 
@@ -165,7 +165,7 @@ fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sende
                 let _ = events.send(ClientEvent::Connected);
             }
             Ok(event) if greeted => {
-                if events.send(ClientEvent::Event(event)).is_err() {
+                if events.send(ClientEvent::Event(Box::new(event))).is_err() {
                     return;
                 }
             }

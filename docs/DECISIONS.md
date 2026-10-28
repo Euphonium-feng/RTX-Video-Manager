@@ -122,3 +122,23 @@ does not need to guess which process owns the foreground. Register both shortcut
 together and roll both back if either fails. Render a custom title bar with minimize
 and close only because the GPUI window-controls helper always advertises maximize on
 Windows even for non-resizable windows.
+
+## ADR-014: Read-only compatibility for unknown NVIDIA builds
+
+Keep the exact NvCpl hash as the only writable identity. If the file is at the
+canonical NVIDIA App path, passes Authenticode with an `NVIDIA Corporation` signer
+organization, exposes every required export, and returns a valid 48-byte `0x318`
+snapshot, allow the UI to load in read-only compatibility mode. Never call
+`NvCplApiSetSetting` or `NvCplApiExecute` in that mode.
+
+Rejected: treating any valid Authenticode signature as a writable build, enabling
+experimental writes behind a toggle, maintaining an online trust list, or disabling
+the console entirely when the hash is unknown. Signature, signer, export, UXD, or
+read-probe failures still fail closed because diagnostic-only operation is not safe
+if the private API shape has not been demonstrated.
+
+Authenticode signer extraction queries the variable-size `CERT_INFO` buffer first,
+then allocates an aligned `u64` buffer using the size returned by
+`CryptMsgGetParam(CMSG_SIGNER_CERT_INFO_PARAM)`. Passing only
+`size_of::<CERT_INFO>()` validates in unit tests but fails on the real NVIDIA
+signature because issuer and serial payloads follow the fixed structure.

@@ -1,8 +1,8 @@
-use crate::{HdrAdjustments, HdrSnapshot, Settings};
+use crate::{CompatibilityInfo, HdrAdjustments, HdrSnapshot, Settings};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const PIPE_NAME: &str = r"\\.\pipe\RtxHdrSwitch.Settings.v1";
 pub const MAX_FRAME_SIZE: usize = 64 * 1024;
 
@@ -24,6 +24,8 @@ pub enum UiPage {
 pub struct DiagnosticsInfo {
     pub nvcpl_path: Option<String>,
     pub expected_sha256: String,
+    pub compatibility: Option<CompatibilityInfo>,
+    pub raw_hdr_hex: Option<String>,
     pub last_error: Option<String>,
 }
 
@@ -151,7 +153,7 @@ pub fn decode<T: for<'de> Deserialize<'de>>(payload: &[u8]) -> Result<T, IpcErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Hotkey;
+    use crate::{CompatibilityMode, Hotkey};
     use std::io::Cursor;
 
     #[test]
@@ -185,6 +187,28 @@ mod tests {
         write_packet(&mut buffer, &command).unwrap();
         let payload = read_packet(&mut Cursor::new(buffer)).unwrap();
         assert_eq!(decode::<UiCommand>(&payload).unwrap(), command);
+    }
+
+    #[test]
+    fn compatibility_diagnostics_round_trip() {
+        let diagnostics = DiagnosticsInfo {
+            nvcpl_path: Some(r"C:\NVIDIA\nvcpl.dll".into()),
+            expected_sha256: "expected".into(),
+            compatibility: Some(CompatibilityInfo {
+                mode: CompatibilityMode::ReadOnlyUnknownBuild,
+                actual_sha256: "actual".into(),
+                expected_sha256: "expected".into(),
+                dll_version: Some("1.2.3.4".into()),
+                probe_passed: true,
+                reason: Some("hash not verified".into()),
+            }),
+            raw_hdr_hex: Some("00010203".into()),
+            last_error: None,
+        };
+        let json = serde_json::to_vec(&diagnostics).unwrap();
+        let decoded: DiagnosticsInfo = serde_json::from_slice(&json).unwrap();
+        assert_eq!(decoded, diagnostics);
+        assert_eq!(PROTOCOL_VERSION, 3);
     }
 
     #[test]
