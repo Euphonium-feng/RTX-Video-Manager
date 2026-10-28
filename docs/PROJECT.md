@@ -2,31 +2,37 @@
 
 ## Goal
 
-Provide a lightweight Windows tray utility with a configurable global shortcut that
-turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
+Provide a lightweight Windows tray utility that controls NVIDIA RTX Video HDR and
+RTX Video Super Resolution (VSR) without opening NVIDIA App. The product name is
+`RTX Video Manager`.
 
 ## Requirements
 
 - Stay resident in the notification area and use minimal idle CPU and memory.
-- Default shortcut: `Ctrl+Alt+H`; allow the user to record a different shortcut.
-- Default `Ctrl+Alt+G` opens or foregrounds the console when it is not active and
-  closes the console when it is already foreground. Allow it to be recorded
-  independently and reject duplicate shortcut assignments.
-- Toggle only RTX Video HDR. Do not toggle Windows HDR or RTX Video Super Resolution.
+- Default shortcuts are `Ctrl+Alt+H` for HDR, `Ctrl+Alt+V` for VSR, and
+  `Ctrl+Alt+G` for the console. Each is independently recordable; the three values
+  must remain unique and register or roll back as one group.
+- `Ctrl+Alt+G` opens or foregrounds the console when it is not active and closes the
+  console when it is already foreground.
+- Toggle RTX Video HDR and RTX VSR independently. Do not toggle Windows HDR.
+- VSR supports enabled/disabled plus `Auto` and quality levels `1` through `4`.
+  Preserve the last non-zero quality for the next enable operation. Changing quality
+  while VSR is disabled updates only the next-enable draft.
 - Preserve the existing NVIDIA HDR tuning fields when toggling.
 - Let the user adjust peak brightness, middle gray, contrast, and saturation through
   both sliders and direct numeric entry. Peak bounds come from the active driver
   snapshot. The reset action always restores the driver default combination.
-- Show a brief bottom-center overlay on successful toggles that reports whether
-  RTX Video HDR is on or off.
-- Provide an on-demand GPUI control console with a direct HDR action, live state,
-  hotkey recording, startup/notification settings, and diagnostics.
-- Ship the control console with a dedicated product icon that follows the console's
-  calibration-dashboard visual language and remains legible at notification-size.
+- Show a brief bottom-center overlay on successful toggles that identifies HDR or VSR
+  and reports the resulting state; include the VSR quality when enabled.
+- Provide an on-demand GPUI control console with overview, HDR, VSR, settings, and
+  diagnostics pages, live state, hotkey recording, startup/notification settings,
+  HDR tuning, and VSR quality selection.
+- Ship the host and console with a dedicated video-frame plus dual-enhancement-channel
+  icon that remains legible at notification size.
 - Keep the resident host lightweight by running GPUI only while the console is open.
-- Permit writes only for the verified NvCpl hash. Load other NVIDIA-signed
-  builds with complete exports and a valid 48-byte read probe in read-only
-  compatibility mode; fail closed on signature, export, or read-probe failure.
+- Permit writes only for the verified NvCpl hash. Load other NVIDIA-signed builds in
+  read-only compatibility mode only when every export exists and both the `0x318`
+  HDR and `0x315`/`0x317` VSR read probes parse correctly; fail closed otherwise.
 - Require the NVIDIA UXD display service and an STA COM session before using the
   private NvCpl API.
 - Start with Windows by default; expose a tray option to disable this.
@@ -38,16 +44,26 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
   state and affects supported SDR video in Chrome within one second.
 - Reopening the utility reads the current driver state rather than cached state.
 - A failed or inconsistent write restores the previous 48-byte HDR state.
+- A failed or inconsistent VSR write restores the previous `0x317` quality and
+  commits again; the fixed fields from `0x315` remain unchanged.
+- HDR and VSR can be toggled independently without changing each other's state.
+- With VSR disabled, choosing a quality changes only the remembered next-enable value.
 - Read-only compatibility mode presents the current HDR snapshot and diagnostics
   while disabling the HDR toggle, tuning inputs, and all NVIDIA write calls.
 - Diagnostics identify the compatibility mode, actual and allowed SHA-256 values,
-  DLL file version, probe result, and latest raw `0x318` bytes.
+  DLL file version, probe result, latest raw `0x318`, raw `0x315`, and raw `0x317`.
 - The generated release artifact comes from a successful GitHub Actions run.
 - Idle private working set is below 15 MiB and idle CPU is effectively zero.
 - Closing the console terminates the GPUI process; tray and shortcut behavior remain.
 - The console title bar exposes minimize and close only; maximize is not offered.
-- The release archive contains `RtxHdrSwitch.exe` and `RtxHdrSettings.exe` together.
-- `RtxHdrSettings.exe` displays its embedded product icon in Windows shell surfaces
+- The HDR tuning card fills the remaining page height as one rounded surface; it must
+  not leave an unwrapped strip above the footer or clip its lower corners.
+- The HDR information card contains only compact status fields; full hashes and raw
+  records remain in diagnostics. The VSR quality panel fills the remaining page height
+  with its live active-quality strip rather than leaving a large empty region.
+- The release archive contains `RtxVideoManager.exe` and
+  `RtxVideoManagerConsole.exe` together.
+- `RtxVideoManagerConsole.exe` displays its embedded product icon in Windows shell surfaces
   rather than the generic executable icon.
 
 ## Reference Environment
@@ -61,6 +77,7 @@ turns NVIDIA RTX Video HDR on or off without opening NVIDIA App.
 ## Out of Scope
 
 - Chrome extensions, CSS video filtering, or content classification.
-- Windows HDR switching, VSR control, auto-update, installers, or public support.
+- Windows HDR switching, VSR GPU priority, a playback-status indicator, automatic
+  game detection, auto-update, installers, or public support.
 - Replacing the native notification-area icon or 500 ms toggle overlay with GPUI.
 - Automatically trusting or enabling writes for an unknown NvCpl build.

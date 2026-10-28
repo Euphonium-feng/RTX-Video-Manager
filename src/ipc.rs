@@ -1,8 +1,8 @@
-use crate::{CompatibilityInfo, HdrAdjustments, HdrSnapshot, Settings};
+use crate::{CompatibilityInfo, HdrAdjustments, HdrSnapshot, Settings, VsrQuality, VsrSnapshot};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const PIPE_NAME: &str = r"\\.\pipe\RtxHdrSwitch.Settings.v1";
 pub const MAX_FRAME_SIZE: usize = 64 * 1024;
 
@@ -13,11 +13,29 @@ pub enum UiHdrState {
     Error(String),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum UiVsrState {
+    Loading,
+    Ready(VsrSnapshot),
+    Error(String),
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum UiPage {
     #[default]
-    Console,
+    Overview,
+    Hdr,
+    Vsr,
+    Settings,
     Diagnostics,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum UiBusyKind {
+    HdrToggle,
+    HdrTuning,
+    VsrToggle,
+    VsrQuality,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -26,6 +44,8 @@ pub struct DiagnosticsInfo {
     pub expected_sha256: String,
     pub compatibility: Option<CompatibilityInfo>,
     pub raw_hdr_hex: Option<String>,
+    pub raw_vsr_info_hex: Option<String>,
+    pub raw_vsr_value_hex: Option<String>,
     pub last_error: Option<String>,
 }
 
@@ -34,9 +54,10 @@ pub struct UiSnapshot {
     pub protocol_version: u32,
     pub app_version: String,
     pub hdr: UiHdrState,
+    pub vsr: UiVsrState,
     pub settings: Settings,
     pub hotkey_registered: bool,
-    pub busy: bool,
+    pub busy: Option<UiBusyKind>,
     pub diagnostics: DiagnosticsInfo,
 }
 
@@ -50,6 +71,8 @@ pub struct UiError {
 pub enum UiCommand {
     Hello { protocol_version: u32 },
     ToggleHdr,
+    ToggleVsr,
+    SetVsrQuality { quality: VsrQuality },
     ApplyHdrTuning { adjustments: HdrAdjustments },
     ApplySettings { settings: Settings },
     BeginHotkeyCapture,
@@ -66,8 +89,7 @@ pub enum HostEvent {
         app_version: String,
     },
     Snapshot(UiSnapshot),
-    HdrChanged(UiSnapshot),
-    SettingsApplied(UiSnapshot),
+    StateChanged(UiSnapshot),
     Error(UiError),
     HotkeyCaptureChanged {
         active: bool,
@@ -153,7 +175,7 @@ pub fn decode<T: for<'de> Deserialize<'de>>(payload: &[u8]) -> Result<T, IpcErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CompatibilityMode, Hotkey};
+    use crate::{CompatibilityMode, Hotkey, VsrQuality};
     use std::io::Cursor;
 
     #[test]
@@ -161,9 +183,11 @@ mod tests {
         let command = UiCommand::ApplySettings {
             settings: Settings {
                 hotkey: Hotkey::default(),
+                vsr_hotkey: Hotkey::vsr_default(),
                 show_console_hotkey: Hotkey::console_default(),
                 start_at_login: false,
                 notifications: true,
+                last_vsr_quality: VsrQuality::Level4,
             },
         };
         let mut buffer = Vec::new();
@@ -190,6 +214,17 @@ mod tests {
     }
 
     #[test]
+    fn packet_round_trip_preserves_vsr_quality() {
+        let command = UiCommand::SetVsrQuality {
+            quality: VsrQuality::Auto,
+        };
+        let mut buffer = Vec::new();
+        write_packet(&mut buffer, &command).unwrap();
+        let payload = read_packet(&mut Cursor::new(buffer)).unwrap();
+        assert_eq!(decode::<UiCommand>(&payload).unwrap(), command);
+    }
+
+    #[test]
     fn compatibility_diagnostics_round_trip() {
         let diagnostics = DiagnosticsInfo {
             nvcpl_path: Some(r"C:\NVIDIA\nvcpl.dll".into()),
@@ -203,12 +238,14 @@ mod tests {
                 reason: Some("hash not verified".into()),
             }),
             raw_hdr_hex: Some("00010203".into()),
+            raw_vsr_info_hex: Some("0100000004000000".into()),
+            raw_vsr_value_hex: Some("04000000".into()),
             last_error: None,
         };
         let json = serde_json::to_vec(&diagnostics).unwrap();
         let decoded: DiagnosticsInfo = serde_json::from_slice(&json).unwrap();
         assert_eq!(decoded, diagnostics);
-        assert_eq!(PROTOCOL_VERSION, 3);
+        assert_eq!(PROTOCOL_VERSION, 4);
     }
 
     #[test]

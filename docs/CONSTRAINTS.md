@@ -17,14 +17,15 @@
   Its SHA-256 must be
   `EEE812AB8FF74975D3CC7FE77130F5766911B6CA2D9C42C1156376A6C13F79F0`.
 - An unknown NVIDIA hash is eligible only when Authenticode verifies, the signer
-  organization is `NVIDIA Corporation`, every required export exists, and the
-  48-byte `0x318` read probe parses correctly. That combination is read-only.
+  organization is `NVIDIA Corporation`, every required export exists, the 48-byte
+  `0x318` HDR read probe parses correctly, and the 20-byte `0x315` plus 4-byte
+  `0x317` VSR reads are consistent. That combination is read-only for both features.
 - An invalid signature or signer, missing export, failed read probe, or malformed
   HDR data fails closed and does not enter read-only compatibility mode.
 - Read-only compatibility must never call `NvCplApiSetSetting`,
-  `NvCplApiExecute`, or persist a proposed setting. The UI disables toggling and
-  tuning, while status, diagnostics, copy-diagnostics, and reset-to-draft remain
-  available.
+  `NvCplApiExecute`, or persist a proposed setting for either feature. The UI
+  disables HDR/VSR toggles, HDR tuning, and VSR quality writes, while status,
+  diagnostics, copy-diagnostics, and local reset-to-draft remain available.
 - Unknown builds cannot become writable through a runtime override, online
   compatibility list, telemetry, or experimental write mode.
 - The NVIDIA worker must initialize an STA COM apartment and confirm
@@ -39,7 +40,22 @@
   0, and saturation 0. It does not restore an arbitrary earlier user-edited snapshot.
 - RTX Video HDR, Windows HDR, and VSR are distinct settings and must not be
   treated interchangeably.
+- VSR reads the 20-byte `0x315` info block and writes the 4-byte `0x317` value.
+  `0x315` fields are support at `+0x00`, quality at `+0x04`, and status at `+0x08`;
+  the remaining eight bytes are uninterpreted. Never call setting `0x31b`.
+- A VSR write commits with `NvCplApiExecute(0x10000, 0, -1)`, verifies quality and
+  support, preserves the fixed `0x315` fields, and restores plus recommits the prior
+  `0x317` value on failure.
+- VSR disabled state is quality `0`. Re-enabling uses the most recent non-zero quality;
+  changing quality while disabled only updates the next-enable persisted draft.
+- The three global shortcuts must be non-duplicated and registered as one rollback
+  group. Defaults are `Ctrl+Alt+H`, `Ctrl+Alt+V`, and `Ctrl+Alt+G`.
+- Public binaries, package names, manifest identity, window titles, ZIP name, README,
+  and product icon use `RTX Video Manager`. Keep the compatibility identifiers
+  `Software\RTXHDRSwitch`, startup value `RtxHdrSwitch`, and the existing host mutex,
+  window-class, and pipe families so upgrades do not lose settings or start twice.
 - GPUI must be pinned to `gpui-kit = "=0.8.0"` and its pinned GPUI snapshot; do not
   mix in official `gpui 0.2.2` or experimental `gpui-fast`.
-- Host/console IPC protocol version `3` is required for compatibility diagnostics.
+- Host/console IPC protocol version `4` is required for HDR/VSR snapshots, unified
+  state-change events, and dual-feature diagnostics.
   Mixed protocol versions must instruct the user to re-extract both executables.

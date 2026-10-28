@@ -1,4 +1,4 @@
-use rtx_hdr_switch::ipc::{
+use rtx_video_manager::ipc::{
     HostEvent, IpcError, PIPE_NAME, PROTOCOL_VERSION, UiCommand, read_packet, write_packet,
 };
 use std::io::{self, Read, Write};
@@ -33,7 +33,7 @@ impl IpcClient {
 
         let io_handle = handle.clone();
         thread::Builder::new()
-            .name("rtx-hdr-ui-ipc".into())
+            .name("rtx-video-manager-ui-ipc".into())
             .spawn(move || io_loop(io_handle, command_rx, event_tx))
             .map_err(|error| format!("无法启动控制台通信线程：{error}"))?;
         crate::log_line("IPC I/O thread started");
@@ -98,7 +98,7 @@ fn connect_pipe() -> Result<HANDLE, String> {
         thread::sleep(Duration::from_millis(50));
     }
     Err(format!(
-        "无法连接后台 RTX HDR 服务（Windows 错误 {last_error}）。请先启动 RtxHdrSwitch.exe。"
+        "无法连接 RTX Video Manager 后台（Windows 错误 {last_error}）。请先启动 RtxVideoManager.exe。"
     ))
 }
 
@@ -147,7 +147,7 @@ fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sende
         }
 
         let result = read_packet(&mut reader).and_then(|payload| {
-            rtx_hdr_switch::ipc::decode::<HostEvent>(&payload)
+            rtx_video_manager::ipc::decode::<HostEvent>(&payload)
                 .map_err(|error| IpcError::InvalidFrame(error.to_string()))
         });
         match result {

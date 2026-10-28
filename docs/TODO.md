@@ -2,8 +2,82 @@
 
 ## In Progress
 
-- Review and merge `feature/readonly-compatibility` after user approval; the branch
-  is intentionally not auto-merged.
+- `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
+  dual-function model, protocol version `4`, three-hotkey grouping, the five-page
+  GPUI console, and the new dual-channel product icon.
+- Real-machine review found that the GPUI console is functionally connected but its
+  visual density and hierarchy are still weaker than `prototype/rtx-video-manager.html`.
+  The overview now uses side-by-side HDR/VSR cards with a status rail, and the
+  HDR/VSR pages have matching right-side information cards.
+- The requested final spacing pass is implemented: the overview uses a two-line
+  `RTX VIDEO` / `SUPER RESOLUTION` title, both feature legends share one baseline, the
+  HDR spectrum shows only the driver-derived `peak_min` / `peak_max` endpoints, the HDR
+  page shows only its own shortcut, both compact information cards no longer clip their
+  lower text, each hero carries the prototype's low-opacity clipped calibration arc, and
+  enabled close actions plus VSR quality choices use explicit bordered surfaces. Settings
+  reset/save commands are now restricted to the settings page in the shared footer.
+- The runnable dual-function prototype is `prototype/rtx-video-manager.html`. It has
+  been rendered and visually reviewed at 100% and 125% preview scales.
+- GitHub Actions run `40357825705` is green for commit `9d8ebc2`; strict
+  `fmt --check`, Clippy, all tests, both Release builds, packaging, and upload passed.
+- Final artifact ZIP SHA-256 is
+  `A4453C2B574B9B115412AFC715C06B52AC07319E0E32ABCA3449C554B0CF95CA`;
+  host SHA-256 is
+  `5B73016B60A68E1537B3B86C79760E0103AD3B54F1B3BF79DC44E0E2AF23B54D`
+  (656,384 bytes); console SHA-256 is
+  `4326D3CAFA73783A13750CA6EDC92FF61899354B4F8FF5DF92445BB819E7AE79`
+  (17,763,840 bytes).
+- The final host launched in `--background`, updated the preserved `RtxHdrSwitch`
+  startup value to the new executable path, and reported 5.37 MiB private memory.
+  The final console connected over protocol `4` and rendered HDR/VSR state correctly.
+- The HDR tuning card now fills the page and keeps its rounded lower edge above the
+  footer. Its real-machine screenshot was reviewed after the layout change.
+- The HTML prototype navigation bug was fixed by adding `#page-hdr[hidden]`; all five
+  pages were verified not to be covered by the HDR page.
+- GitHub Actions run `40365737946` is green for commit `f25481b`; strict formatting,
+  Clippy, all tests, both Release builds, packaging, and upload passed.
+- Visual artifact ZIP SHA-256 is
+  `8887B47C81FA66E633FD40B1CC569B106CEA0CC3EEF893637BB8DFC79CC397A8`;
+  host SHA-256 is
+  `433825645BA5F5F8533FD9D13AC6968FD456182C4531B7A6DAD5FF1FEDC37DFD`
+  (656,384 bytes); console SHA-256 is
+  `4832E37BEF218B2F7C0E97C7A2FE69847524DAF0E72AC4F4B211C547552AF6B9`
+  (17,789,952 bytes).
+- A DPI-aware, off-screen background capture of the final overview at 125% scaling
+  confirmed that both cards fit, the HDR spectrum and VSR ladder are visible, the
+  summary rail is not clipped, and the footer remains fixed. The checked-in preview is
+  `prototype/gpui-overview-125.png`.
+- GitHub Actions run `40501367153` is green for commit `ad0055d`; strict formatting,
+  Clippy, all tests, both Release builds, packaging, and upload passed.
+- Final artifact ZIP SHA-256 is
+  `E0515F1202E3E403EA4D3AE3C7F75194A75F521681CBDE1A4A87751CAD8F6AF4`;
+  host SHA-256 is `79C9B5D66538DDA0889414A405E7DEAF55FB7C1FF8CDF22C03FD37E7F5D244D4`
+  (656,384 bytes); console SHA-256 is
+  `247D1D6317B432E82A5F8BF58CEFB1BA823E18D59B36B9D8E2D4202BD2718D5C`
+  (17,798,144 bytes).
+- Off-screen 125% captures of the final artifact confirmed: the VSR title is split as
+  `RTX VIDEO` / `SUPER RESOLUTION`; overview legends align; HDR labels show the
+  driver-derived `400` and `1440` endpoints; HDR shows only `Ctrl+Alt+H`; VSR's right
+  card has no clipped note; the quality panel fills the remaining height; and
+  diagnostics stays inside its rounded panel. Both hero cards now render the clipped
+  calibration arc from the HTML prototype at low opacity, and the HDR spectrum keeps
+  rounded endpoints without a dark one-pixel seam. Checked-in previews are
+  `prototype/gpui-overview-125.png`, `prototype/gpui-hdr-125.png`, and
+  `prototype/gpui-vsr-125.png`.
+- Off-screen 125% verification of run `40501367153` confirmed that enabled close actions
+  use the visible raised surface and rule border, the selected VSR quality is a solid
+  amber surface, and reset/save footer actions appear on settings only. Overview, HDR,
+  VSR, and diagnostics retain status and reconnect affordances without settings commands.
+- Real-machine testing initially appeared to lack the VSR overlay because the running
+  `RtxVideoManager.exe` process was still the pre-replacement image at the installed
+  path. Restarting loaded the updated host and the user confirmed the VSR toggle overlay
+  was visible. The verified `40501367153` binaries have now replaced the installed files;
+  the background host is running from
+  `D:\Applications\RtxVideoManager-win-x64\RtxVideoManager.exe`, and the preserved
+  startup value points to that path.
+- The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
+  approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
+  optimization rather than a blocker for visual acceptance.
 
 ## Verified
 
@@ -81,6 +155,31 @@
 
 ## Pending
 
+- Capture and review the final HDR/VSR detail pages through the same off-screen
+  background method at 125%, then repeat overview/detail spot checks at 100% and 150%.
+- Keep the GPUI console hidden or off-screen during acceptance. Do not activate a
+  foreground review window while the user is working.
+- Download the green artifact and verify the renamed host and console launch, the
+  old HKCU settings remain readable, and only one `RtxHdrSwitch` startup value exists.
+- On the final artifact, verify `Ctrl+Alt+H`, `Ctrl+Alt+V`, and `Ctrl+Alt+G`, both
+  tray toggles, and console open/close behavior. Confirm a second console hotkey
+  press hides the active console.
+- In Chrome, verify VSR `status` changes while playback starts and stops, HDR and VSR
+  toggle independently, and the four HDR tuning fields remain unchanged by VSR writes.
+- Repeat the documented reversible VSR probe (`4 -> 3 -> 4`) only against the final
+  artifact path used for acceptance; do not substitute or modify the installed NVIDIA
+  DLL.
+- Verify read-only mode through automated compatibility tests and injected UI state.
+  A real unknown signed DLL is not available locally and must not be fabricated by
+  replacing NVIDIA files.
+- Inspect the taskbar, window, tray on/off/error states, and file icon after building.
+  Confirm the product renders as `RTX Video Manager` and uses the new video-frame icon.
+- Verify the updated 860 x 620 console at 100%, 125%, and 150% DPI, including overview,
+  HDR, VSR, settings, and diagnostics; confirm all quality and tuning ranges are visible,
+  read-only disables both write surfaces, and no phantom controls overlap adjacent rows.
+- Verify the diagnostics copy button and both raw VSR data fields.
+- Record host idle memory/CPU, console startup time, console private memory, executable
+  sizes, and both SHA-256 hashes in this file after the final green run.
 - Verify the unknown-build read-only UI against a real unknown signed DLL when such a
   build is available. This phase intentionally did not replace the local NVIDIA file;
   classification, IPC, and disabled-write behavior are covered by automated tests.
@@ -106,4 +205,6 @@
 
 ## Next Action
 
-Review draft PR #1, inspect the review diff, and merge only after explicit approval.
+The requested HDR/VSR spacing work is complete on the 125% reference display. Continue
+the remaining manual acceptance checks at 100% and 150%, then exercise the three
+hotkeys, both toggles, VSR active-state changes, and the clipboard diagnostic action.
