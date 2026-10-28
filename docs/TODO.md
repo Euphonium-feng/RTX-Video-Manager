@@ -2,6 +2,10 @@
 
 ## In Progress
 
+- Prepare the `0.1.0` release from the merged `main` branch. The source and package
+  metadata now use `MIT OR Apache-2.0`, and both license texts are included in the
+  release ZIP. Pending: green cloud build, annotated `0.1.0` tag, GitHub release,
+  artifact checksums, and asset upload.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -81,6 +85,10 @@
 
 ## Verified
 
+- On 2026-10-28 the repository was verified public at
+  `https://github.com/Euphonium-feng/RTX-Video-Manager`. The read-only compatibility
+  branch and the HDR/VSR manager branch were merged into `main` while preserving the
+  user's shortened README.
 - The repository, tray application, tests, and initial cloud build are implemented.
 - On 2026-10-25 a direct reversible probe using `0x318` produced `enabled=1`,
   `active=1` during Chrome SDR video playback, then restored `enabled=0`,

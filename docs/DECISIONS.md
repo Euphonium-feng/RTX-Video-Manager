@@ -230,3 +230,15 @@ left a visibly dark seam between the bright final segment and rounded it indepen
 the first segment rounds its left corners and the bright final segment rounds its right
 corners. Removing the border without segment-level radii produced square endpoints,
 so clipping the parent alone is not sufficient in this GPUI version.
+
+## ADR-018: Dual-license original work as MIT OR Apache-2.0
+
+License the original source code and project-authored assets under
+`MIT OR Apache-2.0`. MIT keeps personal and small-project reuse simple, while the
+Apache-2.0 option adds an explicit patent grant for downstream organizations. The
+release archive includes both license texts, and both Cargo packages declare the SPDX
+expression.
+
+Rejected: MIT-only, which has lower legal overhead but no explicit patent grant;
+Apache-2.0-only, which is less approachable for small users; and copyleft licensing,
+which would impose reciprocal source obligations on derivative desktop forks.

@@ -74,6 +74,13 @@ RTX Video Super Resolution (VSR) without opening NVIDIA App. The product name is
 - `nvcpl.dll` 8.17.15.5527
 - Chrome 155
 
+## Licensing
+
+- Original source code and project-authored assets are available under
+  `MIT OR Apache-2.0`; downstream users may choose either license.
+- Third-party dependencies remain under their respective licenses.
+- NVIDIA binaries are not redistributed.
+
 ## Out of Scope
 
 - Chrome extensions, CSS video filtering, or content classification.

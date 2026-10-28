@@ -59,3 +59,7 @@
 - Host/console IPC protocol version `4` is required for HDR/VSR snapshots, unified
   state-change events, and dual-feature diagnostics.
   Mixed protocol versions must instruct the user to re-extract both executables.
+- Original source and project-authored assets are dual-licensed under
+  `MIT OR Apache-2.0`. Keep both root license files and the Cargo SPDX metadata
+  synchronized, preserve third-party notices, and do not imply that the licenses
+  grant rights to NVIDIA binaries or trademarks.

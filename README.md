@@ -7,7 +7,7 @@
 **一块控制台，接管 RTX Video HDR + VSR。不是更多面板，而是更快地做对视觉决定。**
 
 <p>
-  <img alt="build" src="https://github.com/Euphonium-feng/RTX-HDR-Switch/actions/workflows/build.yml/badge.svg">
+  <img alt="build" src="https://github.com/Euphonium-feng/RTX-Video-Manager/actions/workflows/build.yml/badge.svg">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows11&logoColor=white">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Win32%20%2B%20GPUI-B7410E?style=for-the-badge&logo=rust&logoColor=white">
 </p>
@@ -280,6 +280,20 @@ HDR/VSR 探针全部通过时才进入只读兼容；任何一项失败都会关
 | IPC 帧 | 长度前缀 JSON，≤ 64 KiB |
 
 > 控制台不是常驻进程。关闭后，GPU 渲染内存随之释放。
+
+---
+
+## 许可证
+
+本项目原创源代码与项目自制资源采用双许可证，你可以任选其一：
+
+- [Apache License 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
+
+SPDX-License-Identifier: `MIT OR Apache-2.0`
+
+第三方依赖继续遵循各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本项目不随发布包分发任何 NVIDIA 二进制文件。
 
 ---
 

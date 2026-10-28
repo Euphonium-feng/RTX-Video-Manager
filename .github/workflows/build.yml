@@ -70,6 +70,8 @@ jobs:
           Copy-Item $consoleExe $dist
           Copy-Item README.md $dist
           Copy-Item THIRD_PARTY_NOTICES.md $dist
+          Copy-Item LICENSE-MIT $dist
+          Copy-Item LICENSE-APACHE $dist
           $hostHash = (Get-FileHash $hostExe -Algorithm SHA256).Hash
           $consoleHash = (Get-FileHash $consoleExe -Algorithm SHA256).Hash
           "$hostHash  RtxVideoManager.exe" | Set-Content "$dist/RtxVideoManager.exe.sha256" -Encoding ascii

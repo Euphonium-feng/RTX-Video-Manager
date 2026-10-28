@@ -1,5 +1,8 @@
 # Third-Party Notices
 
+This project is licensed under `MIT OR Apache-2.0`. The license texts are provided in
+`LICENSE-MIT` and `LICENSE-APACHE`.
+
 This project depends on the following open-source crates:
 
 - `windows-sys` (MIT OR Apache-2.0)
