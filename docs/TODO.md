@@ -2,10 +2,6 @@
 
 ## In Progress
 
-- Prepare the `0.1.0` release from the merged `main` branch. The source and package
-  metadata now use `MIT OR Apache-2.0`, and both license texts are included in the
-  release ZIP. Pending: green cloud build, annotated `0.1.0` tag, GitHub release,
-  artifact checksums, and asset upload.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -77,14 +73,26 @@
   path. Restarting loaded the updated host and the user confirmed the VSR toggle overlay
   was visible. The verified `40501367153` binaries have now replaced the installed files;
   the background host is running from
-  `D:\Applications\RtxVideoManager-win-x64\RtxVideoManager.exe`, and the preserved
-  startup value points to that path.
+  `<installed app folder>\RtxVideoManager.exe`, and the preserved startup value points
+  to that path.
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
   approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
   optimization rather than a blocker for visual acceptance.
 
 ## Verified
 
+- `RTX Video Manager 0.1.0` was released at
+  `https://github.com/Euphonium-feng/RTX-Video-Manager/releases/tag/0.1.0`.
+  GitHub Actions run `40661598551` is green for release commit `e57a257`.
+- Release ZIP SHA-256 is
+  `9E4F2AD8F91D3D217338A238309354228B660EF9354DAD5F68E5D50F268B32EC`
+  (7,805,256 bytes). Host SHA-256 is
+  `DC8FB6C1F3E65FC2DB17FBBC360053DEE8BECC3769012ABBA3C5FC4FB196FFA8`
+  (656,384 bytes); console SHA-256 is
+  `6D2ADC380C15CD61F3BCEE42110794F282C89B3E35E5E7A79E727570EBA9FA08`
+  (17,803,776 bytes). The release contains the ZIP and a standalone ZIP checksum file.
+- Original source and project-authored assets now declare `MIT OR Apache-2.0`; both
+  license texts and third-party notices are included in the release ZIP.
 - On 2026-10-28 the repository was verified public at
   `https://github.com/Euphonium-feng/RTX-Video-Manager`. The read-only compatibility
   branch and the HDR/VSR manager branch were merged into `main` while preserving the
