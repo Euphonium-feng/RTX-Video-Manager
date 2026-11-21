@@ -15,8 +15,8 @@ use rtx_video_manager::ipc::{
     HostEvent, UiBusyKind, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
 };
 use rtx_video_manager::{
-    AppError, CompatibilityInfo, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
-    NVCPL_SHA256_HEX, Settings, VsrQuality, VsrSnapshot, format_hotkey,
+    AppError, CompatibilityInfo, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
+    NVCPL_SHA256_HEX, VsrQuality, VsrSnapshot, format_hotkey,
 };
 use session::{SessionEvent, SessionState};
 use std::fs::OpenOptions;

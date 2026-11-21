@@ -163,7 +163,7 @@ impl SessionState {
 
     pub fn reset_hdr_draft(&mut self) -> Option<HdrAdjustments> {
         let defaults = self.hdr_snapshot().map(HdrAdjustments::defaults_for)?;
-        self.hdr_draft = Some(defaults);
+        self.hdr_draft = Some(defaults.clone());
         Some(defaults)
     }
 
@@ -322,7 +322,7 @@ mod tests {
             peak_brightness: defaults.peak_brightness - 100,
             ..defaults
         };
-        state.update_hdr_draft(dirty);
+        state.update_hdr_draft(dirty.clone());
         assert!(state.hdr_dirty());
         assert_eq!(state.begin_tuning_save(), Some(dirty));
         let mut saving = snapshot(Settings::default());
