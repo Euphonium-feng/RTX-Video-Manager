@@ -2,9 +2,9 @@
 
 ## In Progress
 
-- Deepen settings application into a compensating transaction. The host intent
-  lifecycle and the console session state are verified; the settings transaction
-  closes the remaining partial-apply path and the VSR shortcut omission.
+- Unify the named-pipe handle adapter. The host intent lifecycle, console session
+  state, and settings transaction are verified; the remaining candidate removes the
+  duplicated handle/close policy without merging either poll loop.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -88,6 +88,9 @@
 - GitHub Actions run `44933779385` is green for commit `1be4844` on the same branch.
   Format, Clippy with all targets, tests, both release builds, packaging, and upload
   passed. This verifies the console session-state extraction.
+- GitHub Actions run `44935368769` is green for commit `ce87bce` on the same branch.
+  Format, Clippy with all targets, tests, both release builds, packaging, and upload
+  passed. This verifies the compensating settings transaction.
 
 ## Verified
 
@@ -231,5 +234,5 @@
 
 ## Next Action
 
-Commit and push the settings-apply transaction, then wait for a green build before
-tackling the named-pipe handle adapter.
+Commit and push the shared pipe handle adapter, then wait for a green build and report
+the final verification matrix.

@@ -271,3 +271,16 @@ would skip registration for a VSR-only edit and leave a failed save with a stale
 registered shortcut. Rejected: repeating the compensation ladder in each host failure
 branch, or collapsing a failed rollback into the original error without reporting that
 the machine may still be in a mixed state.
+
+## ADR-021: Share the pipe handle adapter, not the pipe loop
+
+Both host and console use `src/pipe_handle.rs` for `PipeHandle`, `PipeReader`, and
+`PipeWriter`. The handle owns `CloseHandle` exactly once; reader and writer borrow it.
+Broken pipe, no data, and disconnected pipe map to end-of-stream on both sides, while
+other Windows errors remain errors. The peek/sleep polling loop, handshake, and
+same-user/session validation stay in their owning modules.
+
+Rejected: merging the polling loops behind a callback interface. The callback surface
+would be nearly as large as the code it replaces and would obscure which thread owns
+the handle. Also rejected: keeping separate reader/writer implementations, because
+their close and end-of-stream policies had already drifted.

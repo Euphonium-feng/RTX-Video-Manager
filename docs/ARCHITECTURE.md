@@ -28,6 +28,10 @@ access; the GPUI process is a transient, unprivileged view over a local IPC cont
 - `src/ipc.rs`: protocol version `4` DTOs and length-prefixed JSON framing,
   including HDR/VSR state, five page identities, unified state-change events,
   compatibility metadata, and raw `0x318`, `0x315`, and `0x317` data.
+- `src/pipe_handle.rs`: the shared Windows handle adapter for both pipe ends.
+  `PipeHandle` is the sole closer; `PipeReader` and `PipeWriter` borrow that
+  handle and apply one broken-pipe/end-of-stream policy. Peek polling, handshake,
+  and same-user validation remain outside this module.
 - `crates/ui/`: `RtxVideoManagerConsole.exe`, the GPUI console; it never links NvCpl. Its
   IPC worker also owns both directions of its pipe handle on one thread.
 - `assets/`: tray state icons, the dual-channel product icon, and the host application
@@ -69,7 +73,9 @@ access; the GPUI process is a transient, unprivileged view over a local IPC cont
    compatibility mode is read-only. The host also rejects tray, hotkey, IPC, and
    legacy-window HDR/VSR write intents before queueing them.
 11. Worker results return to the tray through posted window messages and are also
-    published as complete unified snapshots to a connected console.
+   published as complete unified snapshots to a connected console. Each side keeps
+   one owning handle; reader and writer adapters only borrow it, so a connection
+   is closed once.
 12. Interactive launches spawn the console; `--background` launches only the
    tray so the current-user startup entry stays silent.
 13. Successful toggles show a non-activating, topmost overlay at the bottom center

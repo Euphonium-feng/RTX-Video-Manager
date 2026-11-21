@@ -1,13 +1,12 @@
 use rtx_video_manager::ipc::{
     HostEvent, IpcError, PIPE_NAME, PROTOCOL_VERSION, UiCommand, read_packet, write_packet,
 };
-use std::io::{self, Read, Write};
+use rtx_video_manager::pipe_handle::{PipeHandle, PipeReader, PipeWriter};
 use std::ptr::{null, null_mut};
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::Duration;
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
+use windows_sys::Win32::Foundation::{GetLastError, HANDLE};
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, OPEN_EXISTING};
 use windows_sys::Win32::System::Pipes::PeekNamedPipe;
 
@@ -27,14 +26,13 @@ pub struct IpcClient {
 impl IpcClient {
     pub fn connect_retry() -> Result<(Self, Receiver<ClientEvent>), String> {
         let handle = connect_pipe()?;
-        let handle = Arc::new(PipeHandle(handle as usize));
+        let handle = PipeHandle::new(handle);
         let (event_tx, event_rx) = mpsc::channel();
         let (command_tx, command_rx) = mpsc::channel();
 
-        let io_handle = handle.clone();
         thread::Builder::new()
             .name("rtx-video-manager-ui-ipc".into())
-            .spawn(move || io_loop(io_handle, command_rx, event_tx))
+            .spawn(move || io_loop(handle, command_rx, event_tx))
             .map_err(|error| format!("无法启动控制台通信线程：{error}"))?;
         crate::log_line("IPC I/O thread started");
 
@@ -64,8 +62,8 @@ pub fn activate_existing() -> bool {
     let Ok(handle) = connect_pipe() else {
         return false;
     };
-    let handle = PipeHandle(handle as usize);
-    let mut writer = PipeWriter(handle.raw());
+    let handle = PipeHandle::new(handle);
+    let mut writer = PipeWriter::new(&handle);
     write_packet(
         &mut writer,
         &UiCommand::Hello {
@@ -102,10 +100,10 @@ fn connect_pipe() -> Result<HANDLE, String> {
     ))
 }
 
-fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sender<ClientEvent>) {
+fn io_loop(handle: PipeHandle, commands: Receiver<UiCommand>, events: Sender<ClientEvent>) {
     crate::log_line("IPC I/O loop entered");
-    let mut reader = PipeReader(handle.raw());
-    let mut writer = PipeWriter(handle.raw());
+    let mut reader = PipeReader::new(&handle);
+    let mut writer = PipeWriter::new(&handle);
     let mut greeted = false;
     loop {
         loop {
@@ -183,73 +181,6 @@ fn io_loop(handle: Arc<PipeHandle>, commands: Receiver<UiCommand>, events: Sende
                 return;
             }
         }
-    }
-}
-
-struct PipeHandle(usize);
-
-impl PipeHandle {
-    fn raw(&self) -> HANDLE {
-        self.0 as HANDLE
-    }
-}
-
-impl Drop for PipeHandle {
-    fn drop(&mut self) {
-        unsafe {
-            CloseHandle(self.raw());
-        }
-    }
-}
-
-struct PipeReader(HANDLE);
-
-impl Read for PipeReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let mut count = 0u32;
-        let size = buffer.len().min(u32::MAX as usize) as u32;
-        let ok = unsafe {
-            windows_sys::Win32::Storage::FileSystem::ReadFile(
-                self.0,
-                buffer.as_mut_ptr(),
-                size,
-                &mut count,
-                null_mut(),
-            )
-        };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(count as usize)
-    }
-}
-
-struct PipeWriter(HANDLE);
-
-impl Write for PipeWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        if buffer.is_empty() {
-            return Ok(0);
-        }
-        let mut count = 0u32;
-        let size = buffer.len().min(u32::MAX as usize) as u32;
-        let ok = unsafe {
-            windows_sys::Win32::Storage::FileSystem::WriteFile(
-                self.0,
-                buffer.as_ptr(),
-                size,
-                &mut count,
-                null_mut(),
-            )
-        };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(count as usize)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
     }
 }
 
