@@ -18,6 +18,10 @@ access; the GPUI process is a transient, unprivileged view over a local IPC cont
   notification/overlay/dialog policy for worker completions. The Win32 message loop
   supplies a gate snapshot, dispatches accepted commands, and applies the returned
   state patch and completion effects.
+- `src/host_settings.rs`: settings apply transaction. It validates the candidate,
+  detects hotkey and startup changes (including the VSR shortcut), applies the
+  effects in order, compensates partial failures, and reports whether each restored
+  resource is known to be back.
 - `src/host_ipc.rs`: local named-pipe server, same-user/session validation, command
   queue, and snapshot/event writer. A single connection thread owns every pipe read
   and write; the host main thread only enqueues outbound events.

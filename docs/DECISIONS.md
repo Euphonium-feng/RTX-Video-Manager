@@ -257,3 +257,17 @@ The two families differ in read count and verification fields, so a shared runne
 would require verification and recovery closures in its interface. Instead the
 transaction functions stay in `src/lib.rs`, where their two transport adapters and
 tests remain local, and the host lifecycle owns only commands and effects.
+
+## ADR-020: Settings apply is a compensating transaction
+
+Route settings changes through `src/host_settings.rs`. Hotkeys, startup registration,
+and persisted settings are external effects with ordering constraints; the module owns
+change detection, application order, compensation, and the distinction between a clean
+restore and a partial restore. The host supplies adapters for Win32 hotkeys, the HKCU
+startup value, and settings persistence.
+
+Change detection includes the VSR shortcut. Checking only the HDR and console shortcuts
+would skip registration for a VSR-only edit and leave a failed save with a stale
+registered shortcut. Rejected: repeating the compensation ladder in each host failure
+branch, or collapsing a failed rollback into the original error without reporting that
+the machine may still be in a mixed state.

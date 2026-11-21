@@ -2,12 +2,16 @@
 
 mod host_intent;
 mod host_ipc;
+mod host_settings;
 
 use host_intent::{
     vsr_quality_short, Admission, Intent, IntentGate, IntentState, ReadOutcome, WorkerCommand,
     WorkerEvent,
 };
 use host_ipc::IpcEvent;
+use host_settings::{
+    apply_transaction, ApplyPorts, HotkeyPort, SettingsPort, StartupPort,
+};
 use rtx_video_manager::ipc::{
     DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
 };
@@ -1860,7 +1864,6 @@ fn current_settings() -> Settings {
 }
 
 unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppError> {
-    candidate.validate()?;
     let previous = current_settings();
     let was_registered = APP_STATE
         .get()
@@ -1871,40 +1874,20 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
                 .hotkey_registered
         })
         .unwrap_or(false);
-    let changed = candidate.hotkey != previous.hotkey
-        || candidate.show_console_hotkey != previous.show_console_hotkey
-        || !was_registered;
-    if changed {
-        if let Err(error) = register_configured_hotkeys(owner, &candidate) {
-            let restored = register_configured_hotkeys(owner, &previous).is_ok();
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.hotkey_registered = restored;
-            }
-            return Err(error);
+    let mut hotkeys = HostHotkeys { owner };
+    let mut startup = HostStartup;
+    let mut persisted = HostSettings;
+    let mut ports = ApplyPorts {
+        hotkeys: &mut hotkeys,
+        startup: &mut startup,
+        settings: &mut persisted,
+    };
+    if let Err(failure) = apply_transaction(&candidate, &previous, was_registered, &mut ports) {
+        if let Some(state) = APP_STATE.get() {
+            let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+            state.hotkey_registered = failure.hotkey_registered_after(was_registered);
         }
-    }
-
-    if let Err(error) = set_autostart(candidate.start_at_login) {
-        if changed {
-            let restored = register_configured_hotkeys(owner, &previous).is_ok();
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.hotkey_registered = restored;
-            }
-        }
-        return Err(error);
-    }
-    if let Err(error) = save_settings(&candidate) {
-        let _ = set_autostart(previous.start_at_login);
-        if changed {
-            let restored = register_configured_hotkeys(owner, &previous).is_ok();
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.hotkey_registered = restored;
-            }
-        }
-        return Err(error);
+        return Err(AppError::Settings(failure.user_message()));
     }
 
     if let Some(state) = APP_STATE.get() {
@@ -1918,6 +1901,32 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
         let _ = send_ui_event(HostEvent::StateChanged(snapshot));
     }
     Ok(())
+}
+
+struct HostHotkeys {
+    owner: HWND,
+}
+
+impl HotkeyPort for HostHotkeys {
+    fn register(&mut self, settings: &Settings) -> Result<(), AppError> {
+        unsafe { register_configured_hotkeys(self.owner, settings) }
+    }
+}
+
+struct HostStartup;
+
+impl StartupPort for HostStartup {
+    fn set_enabled(&mut self, enabled: bool) -> Result<(), AppError> {
+        set_autostart(enabled)
+    }
+}
+
+struct HostSettings;
+
+impl SettingsPort for HostSettings {
+    fn persist(&mut self, settings: &Settings) -> Result<(), AppError> {
+        save_settings(settings)
+    }
 }
 
 unsafe fn register_configured_hotkeys(hwnd: HWND, settings: &Settings) -> Result<(), AppError> {

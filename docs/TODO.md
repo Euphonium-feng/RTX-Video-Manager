@@ -2,9 +2,9 @@
 
 ## In Progress
 
-- Deepen the console around a pure session state. The host intent lifecycle is
-  complete and verified by run `44930387784`; the next candidate in the agreed
-  order moves snapshot/draft/in-flight reconciliation out of the GPUI view.
+- Deepen settings application into a compensating transaction. The host intent
+  lifecycle and the console session state are verified; the settings transaction
+  closes the remaining partial-apply path and the VSR shortcut omission.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -85,6 +85,9 @@
   `codex/deepen-host-orchestration`. Format, Clippy with all targets, tests, both
   release builds, packaging, and upload passed. This verifies the host intent
   lifecycle refactor, not a refreshed manual acceptance matrix.
+- GitHub Actions run `44933779385` is green for commit `1be4844` on the same branch.
+  Format, Clippy with all targets, tests, both release builds, packaging, and upload
+  passed. This verifies the console session-state extraction.
 
 ## Verified
 
@@ -228,5 +231,5 @@
 
 ## Next Action
 
-Implement the console session-state candidate, then push and wait for a green build
-before moving to the settings-apply transaction.
+Commit and push the settings-apply transaction, then wait for a green build before
+tackling the named-pipe handle adapter.
