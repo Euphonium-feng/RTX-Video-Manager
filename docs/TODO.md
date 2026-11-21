@@ -2,9 +2,6 @@
 
 ## In Progress
 
-- Unify the named-pipe handle adapter. The host intent lifecycle, console session
-  state, and settings transaction are verified; the remaining candidate removes the
-  duplicated handle/close policy without merging either poll loop.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -91,6 +88,9 @@
 - GitHub Actions run `44935368769` is green for commit `ce87bce` on the same branch.
   Format, Clippy with all targets, tests, both release builds, packaging, and upload
   passed. This verifies the compensating settings transaction.
+- GitHub Actions run `44938182591` is green for commit `33ffe7f` on the same branch.
+  Format, Clippy with all targets, tests, both release builds, packaging, and upload
+  passed. This verifies all four architecture candidates together.
 
 ## Verified
 
@@ -225,6 +225,12 @@
 - Verify that tray, shortcut, native overlay, startup entry, single instance,
   Explorer restart, rollback injection, no-HDR-display, Windows-HDR-off, and
   Surround behavior remain unchanged.
+- On the artifact from run `44938182591`, verify console minimize/close, the
+  `Ctrl+Alt+G` open/close cycle, and that closing the console lets the host release
+  and recreate its one-client pipe connection without a stale client.
+- On the same artifact, inject a VSR-only shortcut conflict and confirm startup and
+  persisted settings stay unchanged; then inject a settings write failure after a
+  VSR-only shortcut change and confirm the previous VSR shortcut is registered again.
 - Record host idle memory/CPU, console startup time, console private memory, and both
   executable sizes.
 
@@ -234,5 +240,5 @@
 
 ## Next Action
 
-Commit and push the shared pipe handle adapter, then wait for a green build and report
-the final verification matrix.
+Download the artifact from run `44938182591` and run the manual acceptance checks above,
+starting with console close/reopen and the VSR-only shortcut rollback.
