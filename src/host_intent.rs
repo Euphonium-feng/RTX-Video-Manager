@@ -212,15 +212,15 @@ impl IntentState {
                     Ok(_) => None,
                     Err(error) => {
                         let text = error.user_message();
-                        (notifications_enabled && previous_error != Some(text.as_str()))
-                            .then_some(Notice {
+                        (notifications_enabled && previous_error != Some(text.as_str())).then_some(
+                            Notice {
                                 text,
                                 is_error: true,
-                            })
+                            },
+                        )
                     }
                 };
                 Completion {
-
                     notification,
                     remember_vsr_quality: result
                         .as_ref()
@@ -240,7 +240,6 @@ impl IntentState {
                         "RTX HDR 已关闭".to_string()
                     };
                     Completion {
-
                         notification: notifications_enabled.then(|| Notice {
                             text: text.clone(),
                             is_error: false,
@@ -258,7 +257,6 @@ impl IntentState {
                 Err(error) => {
                     let text = error.user_message();
                     Completion {
-
                         notification: Some(Notice {
                             text: text.clone(),
                             is_error: true,
@@ -286,7 +284,6 @@ impl IntentState {
                         "RTX VSR 已关闭".to_string()
                     };
                     Completion {
-
                         notification: notifications_enabled.then(|| Notice {
                             text: text.clone(),
                             is_error: false,
@@ -307,7 +304,6 @@ impl IntentState {
                 Err(error) => {
                     let text = error.user_message();
                     Completion {
-
                         notification: Some(Notice {
                             text: text.clone(),
                             is_error: true,
@@ -323,7 +319,6 @@ impl IntentState {
             },
             WorkerEvent::HdrTuning(result) => match result {
                 Ok(_) => Completion {
-
                     refresh_tray: true,
                     refresh_settings_button: true,
                     broadcast_snapshot: true,
@@ -332,7 +327,6 @@ impl IntentState {
                 Err(error) => {
                     let text = error.user_message();
                     Completion {
-
                         notification: Some(Notice {
                             text: text.clone(),
                             is_error: true,
