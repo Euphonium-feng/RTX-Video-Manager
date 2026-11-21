@@ -1,20 +1,26 @@
 #![windows_subsystem = "windows"]
 
+mod host_intent;
 mod host_ipc;
+mod host_settings;
 
+use host_intent::{
+    vsr_quality_short, Admission, Intent, IntentGate, IntentState, ReadOutcome, WorkerCommand,
+    WorkerEvent,
+};
 use host_ipc::IpcEvent;
+use host_settings::{apply_transaction, ApplyPorts, HotkeyPort, SettingsPort, StartupPort};
 use rtx_video_manager::ipc::{
-    DiagnosticsInfo, HostEvent, UiBusyKind, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot,
-    UiVsrState,
+    DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
 };
 use rtx_video_manager::{
     classify_compatibility, format_hotkey, hex_lower, is_nvidia_signer_organization,
     parse_hdr_info, parse_vsr_info, parse_vsr_value, set_vsr_quality_with_transport, sha256_hex,
     toggle_vsr_with_transport, toggle_with_transport, tune_with_transport, AppError,
     CompatibilityInfo, CompatibilityMode, HdrAdjustments, HdrSnapshot, Hotkey, NvTransport,
-    Settings, ToggleOutcome, TuningOutcome, VsrOutcome, VsrQuality, VsrSnapshot, VsrTransport,
-    HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH,
-    NVCPL_SHA256_HEX, VSR_INFO_SETTING_ID, VSR_INFO_SIZE, VSR_VALUE_SETTING_ID, VSR_VALUE_SIZE,
+    Settings, VsrQuality, VsrSnapshot, VsrTransport, HDR_INFO_SIZE, HDR_SETTING_ID, MOD_ALT,
+    MOD_CONTROL, MOD_SHIFT, MOD_WIN, NVCPL_RELATIVE_PATH, NVCPL_SHA256_HEX, VSR_INFO_SETTING_ID,
+    VSR_INFO_SIZE, VSR_VALUE_SETTING_ID, VSR_VALUE_SIZE,
 };
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -182,12 +188,9 @@ struct AppState {
     last_hdr_raw: Option<String>,
     last_vsr_raw_info: Option<String>,
     last_vsr_raw_value: Option<String>,
-    busy: bool,
-    busy_kind: Option<UiBusyKind>,
+    intent: IntentState,
     hotkey_registered: bool,
     capture_active: bool,
-    last_toggle: Option<Instant>,
-    last_vsr_toggle: Option<Instant>,
     settings_window: usize,
     worker_tx: Option<Sender<WorkerCommand>>,
     icons: Icons,
@@ -203,31 +206,6 @@ struct OverlayState {
     hwnd: usize,
     text: String,
     positive: bool,
-}
-
-enum WorkerCommand {
-    Read,
-    ToggleHdr,
-    ToggleVsr { remembered: VsrQuality },
-    SetVsrQuality(VsrQuality),
-    ApplyHdrTuning(HdrAdjustments),
-    Shutdown,
-}
-
-enum WorkerEvent {
-    Read(Result<ReadOutcome, AppError>),
-    HdrToggle(Result<ToggleOutcome, AppError>),
-    Vsr(Result<VsrOutcome, AppError>),
-    HdrTuning(Result<TuningOutcome, AppError>),
-}
-
-struct ReadOutcome {
-    hdr: HdrSnapshot,
-    hdr_raw: [u8; HDR_INFO_SIZE],
-    vsr: VsrSnapshot,
-    vsr_info_raw: [u8; VSR_INFO_SIZE],
-    vsr_value_raw: [u8; VSR_VALUE_SIZE],
-    compatibility: CompatibilityInfo,
 }
 
 type InitFn = unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32;
@@ -632,12 +610,9 @@ unsafe fn run() -> i32 {
         last_hdr_raw: None,
         last_vsr_raw_info: None,
         last_vsr_raw_value: None,
-        busy: false,
-        busy_kind: None,
+        intent: IntentState::default(),
         hotkey_registered: false,
         capture_active: false,
-        last_toggle: None,
-        last_vsr_toggle: None,
         settings_window: 0,
         worker_tx: None,
         icons,
@@ -734,17 +709,6 @@ unsafe fn run() -> i32 {
 
 fn overlay_rgb(red: u8, green: u8, blue: u8) -> u32 {
     red as u32 | ((green as u32) << 8) | ((blue as u32) << 16)
-}
-
-fn vsr_quality_short(quality: VsrQuality) -> &'static str {
-    match quality {
-        VsrQuality::Off => "关闭",
-        VsrQuality::Level1 => "1",
-        VsrQuality::Level2 => "2",
-        VsrQuality::Level3 => "3",
-        VsrQuality::Level4 => "4",
-        VsrQuality::Auto => "自动",
-    }
 }
 
 unsafe fn show_toggle_overlay(text: &str, positive: bool) {
@@ -1133,7 +1097,7 @@ fn ui_snapshot() -> Option<UiSnapshot> {
         vsr,
         settings: state.settings.clone(),
         hotkey_registered: state.hotkey_registered,
-        busy: state.busy_kind,
+        busy: state.intent.busy(),
         diagnostics: DiagnosticsInfo {
             nvcpl_path: nvcpl_path().map(|path| path.display().to_string()),
             expected_sha256: NVCPL_SHA256_HEX.into(),
@@ -1271,7 +1235,7 @@ unsafe fn end_hotkey_capture(hwnd: HWND, disconnected: bool) {
 unsafe fn request_read(hwnd: HWND) {
     let sender = if let Some(state) = APP_STATE.get() {
         let state = state.lock().unwrap_or_else(|p| p.into_inner());
-        if state.busy {
+        if state.intent.is_busy() {
             return;
         }
         state.worker_tx.clone()
@@ -1287,252 +1251,99 @@ unsafe fn request_read(hwnd: HWND) {
 }
 
 unsafe fn request_toggle(hwnd: HWND, from_hotkey: bool) {
-    let mut read_only = false;
-    let sender = if let Some(state) = APP_STATE.get() {
-        let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-        if state
-            .compatibility
-            .as_ref()
-            .is_some_and(|compatibility| !compatibility.is_writable())
-        {
-            read_only = true;
-            None
-        } else {
-            if from_hotkey && state.settings_window != 0 {
-                return;
-            }
-            if state.busy {
-                return;
-            }
-            if state
-                .last_toggle
-                .is_some_and(|last| last.elapsed().as_millis() < 300)
-            {
-                return;
-            }
-            if state.worker_tx.is_none() {
-                return;
-            }
-            state.busy = true;
-            state.busy_kind = Some(UiBusyKind::HdrToggle);
-            state.last_toggle = Some(Instant::now());
-            state.worker_tx.clone()
-        }
-    } else {
-        None
-    };
-    if read_only {
-        show_balloon(
-            hwnd,
-            "RTX Video Manager",
-            AppError::ReadOnlyCompatibility.user_message().as_str(),
-            true,
-        );
-        return;
-    }
-    if let Some(sender) = sender {
-        if sender.send(WorkerCommand::ToggleHdr).is_err() {
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.busy = false;
-                state.busy_kind = None;
-            }
-            log_line("failed to send toggle command to NVIDIA worker");
-        }
-        add_or_update_tray(hwnd, false);
-        send_ui_snapshot();
-    }
+    submit_intent(hwnd, Intent::ToggleHdr { from_hotkey });
 }
 
 unsafe fn request_hdr_tuning(hwnd: HWND, adjustments: HdrAdjustments) {
-    let mut read_only = false;
-    let sender = if let Some(state) = APP_STATE.get() {
-        let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-        if state
-            .compatibility
-            .as_ref()
-            .is_some_and(|compatibility| !compatibility.is_writable())
-        {
-            read_only = true;
-            None
-        } else if state.busy || state.worker_tx.is_none() {
-            return;
-        } else {
-            state.busy = true;
-            state.busy_kind = Some(UiBusyKind::HdrTuning);
-            state.worker_tx.clone()
-        }
-    } else {
-        None
-    };
-    if read_only {
-        send_ui_error(AppError::ReadOnlyCompatibility);
-        return;
-    }
-    if let Some(sender) = sender {
-        if sender
-            .send(WorkerCommand::ApplyHdrTuning(adjustments))
-            .is_err()
-        {
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.busy = false;
-                state.busy_kind = None;
-            }
-            log_line("failed to send HDR tuning command to NVIDIA worker");
-        }
-        add_or_update_tray(hwnd, false);
-        send_ui_snapshot();
-    }
+    submit_intent(hwnd, Intent::TuneHdr(adjustments));
 }
 
 unsafe fn request_vsr_toggle(hwnd: HWND, from_hotkey: bool) {
-    let mut read_only = false;
-    let mut unsupported = false;
-    let sender = if let Some(state) = APP_STATE.get() {
-        let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-        if state
-            .compatibility
-            .as_ref()
-            .is_some_and(|compatibility| !compatibility.is_writable())
-        {
-            read_only = true;
-            None
-        } else {
-            if matches!(
-                &state.vsr,
-                VsrUi::Ready(snapshot) if !snapshot.supported
-            ) {
-                unsupported = true;
-                None
-            } else {
-                if from_hotkey && state.settings_window != 0 {
-                    return;
-                }
-                if state.busy {
-                    return;
-                }
-                if state
-                    .last_vsr_toggle
-                    .is_some_and(|last| last.elapsed().as_millis() < 300)
-                {
-                    return;
-                }
-                if state.worker_tx.is_none() {
-                    return;
-                }
-                state.busy = true;
-                state.busy_kind = Some(UiBusyKind::VsrToggle);
-                state.last_vsr_toggle = Some(Instant::now());
-                state.worker_tx.clone()
-            }
-        }
-    } else {
-        None
-    };
-    if read_only {
-        show_balloon(
-            hwnd,
-            "RTX Video Manager",
-            AppError::ReadOnlyCompatibility.user_message().as_str(),
-            true,
-        );
-        return;
-    }
-    if unsupported {
-        show_balloon(
-            hwnd,
-            "RTX Video Manager",
-            AppError::VsrUnsupported.user_message().as_str(),
-            true,
-        );
-        return;
-    }
-    if let Some(sender) = sender {
-        let remembered = current_settings().last_vsr_quality;
-        if sender
-            .send(WorkerCommand::ToggleVsr { remembered })
-            .is_err()
-        {
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.busy = false;
-                state.busy_kind = None;
-            }
-            log_line("failed to send VSR toggle command to NVIDIA worker");
-        }
-        add_or_update_tray(hwnd, false);
-        send_ui_snapshot();
-    }
+    submit_intent(hwnd, Intent::ToggleVsr { from_hotkey });
 }
 
 unsafe fn request_vsr_quality(hwnd: HWND, quality: VsrQuality) {
-    if !quality.is_enabled() {
-        send_ui_error(AppError::Settings("请选择 Auto 或 1–4 质量档位。".into()));
-        return;
-    }
+    submit_intent(hwnd, Intent::SetVsrQuality(quality));
+}
 
-    let mut read_only = false;
-    let mut store_only = false;
-    let sender = if let Some(state) = APP_STATE.get() {
-        let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-        if state
-            .compatibility
-            .as_ref()
-            .is_some_and(|compatibility| !compatibility.is_writable())
-        {
-            read_only = true;
-            None
-        } else {
-            let enabled = matches!(&state.vsr, VsrUi::Ready(snapshot) if snapshot.enabled);
-            if !enabled {
-                state.settings.last_vsr_quality = quality;
-                if let Err(error) = save_settings(&state.settings) {
+unsafe fn submit_intent(hwnd: HWND, intent: Intent) {
+    let (admission, settings_to_save, sender) = if let Some(shared) = APP_STATE.get() {
+        let mut state = shared.lock().unwrap_or_else(|p| p.into_inner());
+        let gate = IntentGate {
+            read_only: state
+                .compatibility
+                .as_ref()
+                .is_some_and(|compatibility| !compatibility.is_writable()),
+            settings_window_open: state.settings_window != 0,
+            worker_available: state.worker_tx.is_some(),
+            vsr_supported: matches!(&state.vsr, VsrUi::Ready(snapshot) if snapshot.supported),
+            vsr_enabled: matches!(&state.vsr, VsrUi::Ready(snapshot) if snapshot.enabled),
+            remembered_vsr_quality: state.settings.last_vsr_quality,
+        };
+        let admission = state.intent.admit(intent, &gate, Instant::now());
+        let settings_to_save = match &admission {
+            Admission::StoreVsrQuality(quality) => {
+                state.settings.last_vsr_quality = *quality;
+                Some(state.settings.clone())
+            }
+            _ => None,
+        };
+        (admission, settings_to_save, state.worker_tx.clone())
+    } else {
+        return;
+    };
+
+    match admission {
+        Admission::Ignored => return,
+        Admission::Notify(error) => {
+            show_balloon(hwnd, "RTX Video Manager", &error.user_message(), true);
+            return;
+        }
+        Admission::UiError(error) => {
+            send_ui_error(error);
+            return;
+        }
+        Admission::StoreVsrQuality(quality) => {
+            if let Some(settings) = settings_to_save {
+                if let Err(error) = save_settings(&settings) {
                     send_ui_error(error);
                     return;
                 }
-                store_only = true;
-                None
-            } else {
-                if state.busy || state.worker_tx.is_none() {
-                    return;
+            }
+            if let Some(snapshot) = ui_snapshot() {
+                let _ = send_ui_event(HostEvent::StateChanged(snapshot));
+            }
+            show_balloon(
+                hwnd,
+                "RTX Video Manager",
+                &format!("VSR 下次启用质量：{}", vsr_quality_short(quality)),
+                false,
+            );
+            return;
+        }
+        Admission::Dispatch(command) => {
+            let label = match &command {
+                WorkerCommand::ToggleHdr => "toggle",
+                WorkerCommand::ApplyHdrTuning(_) => "HDR tuning",
+                WorkerCommand::ToggleVsr { .. } => "VSR toggle",
+                WorkerCommand::SetVsrQuality(_) => "VSR quality",
+                WorkerCommand::Read | WorkerCommand::Shutdown => "unexpected",
+            };
+            let failed = sender
+                .map(|sender| sender.send(command).is_err())
+                .unwrap_or(true);
+            if failed {
+                if let Some(shared) = APP_STATE.get() {
+                    let mut state = shared.lock().unwrap_or_else(|p| p.into_inner());
+                    state.intent.dispatch_failed();
                 }
-                state.busy = true;
-                state.busy_kind = Some(UiBusyKind::VsrQuality);
-                state.worker_tx.clone()
+                log_line(&format!("failed to send {label} command to NVIDIA worker"));
             }
         }
-    } else {
-        None
-    };
-    if read_only {
-        send_ui_error(AppError::ReadOnlyCompatibility);
-        return;
     }
-    if store_only {
-        if let Some(snapshot) = ui_snapshot() {
-            let _ = send_ui_event(HostEvent::StateChanged(snapshot));
-        }
-        show_balloon(
-            hwnd,
-            "RTX Video Manager",
-            &format!("VSR 下次启用质量：{}", vsr_quality_short(quality)),
-            false,
-        );
-        return;
-    }
-    if let Some(sender) = sender {
-        if sender.send(WorkerCommand::SetVsrQuality(quality)).is_err() {
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.busy = false;
-                state.busy_kind = None;
-            }
-            log_line("failed to send VSR quality command to NVIDIA worker");
-        }
-        add_or_update_tray(hwnd, false);
-        send_ui_snapshot();
-    }
+
+    add_or_update_tray(hwnd, false);
+    send_ui_snapshot();
 }
 
 fn nv_worker(receiver: mpsc::Receiver<WorkerCommand>, hwnd_value: usize) {
@@ -1680,260 +1491,112 @@ unsafe fn handle_worker_events(hwnd: HWND) {
         .unwrap_or_default();
 
     for event in events {
-        match event {
-            WorkerEvent::Read(result) => {
-                log_line("NVIDIA state read completed");
-                let (notification, critical) = if let Some(state) = APP_STATE.get() {
-                    let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                    match result {
-                        Ok(outcome) => {
-                            let remembered_quality = if outcome.vsr.enabled {
-                                Some(outcome.vsr.quality)
-                            } else {
-                                None
-                            };
-                            state.hdr = HdrUi::Ready(outcome.hdr);
-                            state.vsr = VsrUi::Ready(outcome.vsr);
-                            state.compatibility = Some(outcome.compatibility);
-                            state.last_hdr_raw = Some(hex_lower(&outcome.hdr_raw));
-                            state.last_vsr_raw_info = Some(hex_lower(&outcome.vsr_info_raw));
-                            state.last_vsr_raw_value = Some(hex_lower(&outcome.vsr_value_raw));
-                            if let Some(quality) = remembered_quality {
-                                if state.settings.last_vsr_quality != quality {
-                                    state.settings.last_vsr_quality = quality;
-                                    if let Err(error) = save_settings(&state.settings) {
-                                        log_line(&format!(
-                                            "failed to persist remembered VSR quality: {error:?}"
-                                        ));
-                                    }
-                                }
-                            }
-                            state.last_error = None;
-                            (None, false)
-                        }
-                        Err(error) => {
-                            let text = error.user_message();
-                            let changed = state.last_error.as_deref() != Some(&text);
-                            state.hdr = HdrUi::Error(text.clone());
-                            state.vsr = VsrUi::Error(text.clone());
-                            state.last_error = Some(text.clone());
-                            let enabled = state.settings.notifications;
-                            (
-                                if changed && enabled {
-                                    Some((text, true))
-                                } else {
-                                    None
-                                },
-                                false,
-                            )
-                        }
+        let (completion, settings_to_save) = if let Some(shared) = APP_STATE.get() {
+            let mut state = shared.lock().unwrap_or_else(|p| p.into_inner());
+            let notifications_enabled = state.settings.notifications;
+            let previous_error = state.last_error.clone();
+            let completion =
+                state
+                    .intent
+                    .complete(&event, notifications_enabled, previous_error.as_deref());
+            match &event {
+                WorkerEvent::Read(Ok(outcome)) => {
+                    log_line("NVIDIA state read completed");
+                    state.hdr = HdrUi::Ready(outcome.hdr.clone());
+                    state.vsr = VsrUi::Ready(outcome.vsr.clone());
+                    state.compatibility = Some(outcome.compatibility.clone());
+                    state.last_hdr_raw = Some(hex_lower(&outcome.hdr_raw));
+                    state.last_vsr_raw_info = Some(hex_lower(&outcome.vsr_info_raw));
+                    state.last_vsr_raw_value = Some(hex_lower(&outcome.vsr_value_raw));
+                    state.last_error = None;
+                }
+                WorkerEvent::Read(Err(error)) => {
+                    log_line("NVIDIA state read completed");
+                    let text = error.user_message();
+                    state.hdr = HdrUi::Error(text.clone());
+                    state.vsr = VsrUi::Error(text.clone());
+                    state.last_error = Some(text);
+                }
+                WorkerEvent::HdrToggle(Ok(outcome)) => {
+                    state.hdr = HdrUi::Ready(outcome.after.clone());
+                    state.last_hdr_raw = Some(hex_lower(&outcome.raw));
+                    state.last_error = None;
+                }
+                WorkerEvent::HdrToggle(Err(error)) => {
+                    let text = error.user_message();
+                    if !matches!(error, AppError::ReadOnlyCompatibility) {
+                        state.hdr = HdrUi::Error(text.clone());
                     }
-                } else {
-                    (None, false)
-                };
-                add_or_update_tray(hwnd, false);
-                if let Some((text, is_error)) = notification {
-                    show_balloon(hwnd, "RTX Video Manager", &text, is_error);
+                    state.last_error = Some(text);
                 }
-                if critical {
-                    show_message(hwnd, "RTX Video Manager", wm::MB_OK | wm::MB_ICONERROR);
+                WorkerEvent::Vsr(Ok(outcome)) => {
+                    state.vsr = VsrUi::Ready(outcome.after.clone());
+                    state.last_vsr_raw_info = Some(hex_lower(&outcome.raw_info));
+                    state.last_vsr_raw_value = Some(hex_lower(&outcome.raw_value));
+                    state.last_error = None;
                 }
-                refresh_settings_toggle_button();
-                if let Some(snapshot) = ui_snapshot() {
-                    let _ = send_ui_event(HostEvent::StateChanged(snapshot));
-                }
-            }
-            WorkerEvent::HdrToggle(result) => {
-                let (notification, critical, overlay) = if let Some(state) = APP_STATE.get() {
-                    let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                    state.busy = false;
-                    state.busy_kind = None;
-                    match result {
-                        Ok(outcome) => {
-                            let hdr_enabled = outcome.after.enabled;
-                            state.hdr = HdrUi::Ready(outcome.after);
-                            state.last_hdr_raw = Some(hex_lower(&outcome.raw));
-                            state.last_error = None;
-                            let text = if hdr_enabled {
-                                "RTX HDR 已开启".to_string()
-                            } else {
-                                "RTX HDR 已关闭".to_string()
-                            };
-                            let notifications = state.settings.notifications;
-                            let overlay_text = text.clone();
-                            (
-                                if notifications {
-                                    Some((text, false))
-                                } else {
-                                    None
-                                },
-                                false,
-                                Some((overlay_text, hdr_enabled)),
-                            )
-                        }
-                        Err(error) => {
-                            let text = error.user_message();
-                            let critical = matches!(error, AppError::RollbackFailed);
-                            if !matches!(error, AppError::ReadOnlyCompatibility) {
-                                state.hdr = HdrUi::Error(text.clone());
-                            }
-                            state.last_error = Some(text.clone());
-                            (Some((text, true)), critical, None)
-                        }
+                WorkerEvent::Vsr(Err(error)) => {
+                    let text = error.user_message();
+                    if !matches!(error, AppError::ReadOnlyCompatibility) {
+                        state.vsr = VsrUi::Error(text.clone());
                     }
-                } else {
-                    (None, false, None)
-                };
-                add_or_update_tray(hwnd, false);
-                if let Some((text, enabled)) = overlay {
-                    show_toggle_overlay(&text, enabled);
+                    state.last_error = Some(text);
                 }
-                if let Some((text, is_error)) = notification {
-                    show_balloon(hwnd, "RTX Video Manager", &text, is_error);
-                }
-                if critical {
-                    let detail = APP_STATE
-                        .get()
-                        .and_then(|state| {
-                            state
-                                .lock()
-                                .unwrap_or_else(|p| p.into_inner())
-                                .last_error
-                                .clone()
-                        })
-                        .unwrap_or_else(|| "写入失败，且无法恢复原始状态。".into());
-                    show_message(
-                        hwnd,
-                        &format!("{detail}\n\n请立即打开 NVIDIA App 检查 RTX 视频 HDR 状态。"),
-                        wm::MB_OK | wm::MB_ICONERROR,
-                    );
-                }
-                refresh_settings_toggle_button();
-                if let Some(snapshot) = ui_snapshot() {
-                    let _ = send_ui_event(HostEvent::StateChanged(snapshot));
-                }
-            }
-            WorkerEvent::Vsr(result) => {
-                let (notification, critical, overlay) = if let Some(state) = APP_STATE.get() {
-                    let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                    state.busy = false;
-                    state.busy_kind = None;
-                    match result {
-                        Ok(outcome) => {
-                            let enabled = outcome.after.enabled;
-                            let quality = outcome.after.quality;
-                            state.vsr = VsrUi::Ready(outcome.after);
-                            state.last_vsr_raw_info = Some(hex_lower(&outcome.raw_info));
-                            state.last_vsr_raw_value = Some(hex_lower(&outcome.raw_value));
-                            state.last_error = None;
-                            if enabled && state.settings.last_vsr_quality != quality {
-                                state.settings.last_vsr_quality = quality;
-                                if let Err(error) = save_settings(&state.settings) {
-                                    log_line(&format!(
-                                        "failed to persist remembered VSR quality: {error:?}"
-                                    ));
-                                }
-                            }
-                            let text = if enabled {
-                                format!("RTX VSR 已开启 · 质量 {}", vsr_quality_short(quality))
-                            } else {
-                                "RTX VSR 已关闭".to_string()
-                            };
-                            let notifications = state.settings.notifications;
-                            (
-                                if notifications {
-                                    Some((text.clone(), false))
-                                } else {
-                                    None
-                                },
-                                false,
-                                Some((text, enabled)),
-                            )
-                        }
-                        Err(error) => {
-                            let text = error.user_message();
-                            let critical = matches!(error, AppError::RollbackFailed);
-                            if !matches!(error, AppError::ReadOnlyCompatibility) {
-                                state.vsr = VsrUi::Error(text.clone());
-                            }
-                            state.last_error = Some(text.clone());
-                            (Some((text, true)), critical, None)
-                        }
-                    }
-                } else {
-                    (None, false, None)
-                };
-                add_or_update_tray(hwnd, false);
-                if let Some((text, enabled)) = overlay {
-                    show_toggle_overlay(&text, enabled);
-                }
-                if let Some((text, is_error)) = notification {
-                    show_balloon(hwnd, "RTX Video Manager", &text, is_error);
-                }
-                if critical {
-                    let detail = APP_STATE
-                        .get()
-                        .and_then(|state| {
-                            state
-                                .lock()
-                                .unwrap_or_else(|p| p.into_inner())
-                                .last_error
-                                .clone()
-                        })
-                        .unwrap_or_else(|| "写入失败，且无法恢复原始状态。".into());
-                    show_message(
-                        hwnd,
-                        &format!("{detail}\n\n请立即打开 NVIDIA App 检查 VSR 状态。"),
-                        wm::MB_OK | wm::MB_ICONERROR,
-                    );
-                }
-                if let Some(snapshot) = ui_snapshot() {
-                    let _ = send_ui_event(HostEvent::StateChanged(snapshot));
-                }
-            }
-            WorkerEvent::HdrTuning(result) => {
-                let (success, error_message) = if let Some(state) = APP_STATE.get() {
-                    let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                    state.busy = false;
-                    state.busy_kind = None;
-                    match result {
-                        Ok(outcome) => {
-                            state.hdr = HdrUi::Ready(outcome.after);
-                            state.last_hdr_raw = Some(hex_lower(&outcome.raw));
-                            state.last_error = None;
-                            (true, None)
-                        }
-                        Err(error) => {
-                            let critical = matches!(error, AppError::RollbackFailed);
-                            let text = error.user_message();
-                            if critical {
-                                state.hdr = HdrUi::Error(text.clone());
-                            }
-                            state.last_error = Some(text.clone());
-                            (false, Some((error, text, critical)))
-                        }
-                    }
-                } else {
-                    (false, None)
-                };
-                add_or_update_tray(hwnd, false);
-                refresh_settings_toggle_button();
-                if success {
+                WorkerEvent::HdrTuning(Ok(outcome)) => {
                     log_line("NVIDIA HDR tuning applied");
-                } else if let Some((error, text, critical)) = error_message {
-                    show_balloon(hwnd, "RTX Video Manager", &text, true);
-                    send_ui_error(error);
-                    if critical {
-                        show_message(
-                            hwnd,
-                            &format!("{text}\n\n请立即打开 NVIDIA App 检查 RTX 视频 HDR 状态。"),
-                            wm::MB_OK | wm::MB_ICONERROR,
-                        );
+                    state.hdr = HdrUi::Ready(outcome.after.clone());
+                    state.last_hdr_raw = Some(hex_lower(&outcome.raw));
+                    state.last_error = None;
+                }
+                WorkerEvent::HdrTuning(Err(error)) => {
+                    let text = error.user_message();
+                    if matches!(error, AppError::RollbackFailed) {
+                        state.hdr = HdrUi::Error(text.clone());
                     }
+                    state.last_error = Some(text);
                 }
-                if let Some(snapshot) = ui_snapshot() {
-                    let _ = send_ui_event(HostEvent::StateChanged(snapshot));
+            }
+            let settings_to_save = completion.remember_vsr_quality.and_then(|quality| {
+                if state.settings.last_vsr_quality != quality {
+                    state.settings.last_vsr_quality = quality;
+                    Some(state.settings.clone())
+                } else {
+                    None
                 }
+            });
+            (completion, settings_to_save)
+        } else {
+            continue;
+        };
+
+        if let Some(settings) = settings_to_save {
+            if let Err(error) = save_settings(&settings) {
+                log_line(&format!(
+                    "failed to persist remembered VSR quality: {error:?}"
+                ));
+            }
+        }
+        if completion.refresh_tray {
+            add_or_update_tray(hwnd, false);
+        }
+        if let Some(overlay) = completion.overlay {
+            show_toggle_overlay(&overlay.text, overlay.positive);
+        }
+        if let Some(notice) = completion.notification {
+            show_balloon(hwnd, "RTX Video Manager", &notice.text, notice.is_error);
+        }
+        if let Some(error) = completion.ui_error {
+            send_ui_error(error);
+        }
+        if completion.refresh_settings_button {
+            refresh_settings_toggle_button();
+        }
+        if let Some(dialog) = completion.dialog {
+            show_message(hwnd, &dialog.text, wm::MB_OK | wm::MB_ICONERROR);
+        }
+        if completion.broadcast_snapshot {
+            if let Some(snapshot) = ui_snapshot() {
+                let _ = send_ui_event(HostEvent::StateChanged(snapshot));
             }
         }
     }
@@ -2066,8 +1729,8 @@ unsafe fn show_tray_menu(hwnd: HWND) {
             let vsr_supported = matches!(&state.vsr, VsrUi::Ready(snapshot) if snapshot.supported);
             (
                 status,
-                !state.busy && !read_only && hdr_supported,
-                !state.busy && !read_only && vsr_supported,
+                !state.intent.is_busy() && !read_only && hdr_supported,
+                !state.intent.is_busy() && !read_only && vsr_supported,
                 state.settings.start_at_login,
                 state.settings.notifications,
             )
@@ -2199,7 +1862,6 @@ fn current_settings() -> Settings {
 }
 
 unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppError> {
-    candidate.validate()?;
     let previous = current_settings();
     let was_registered = APP_STATE
         .get()
@@ -2210,40 +1872,20 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
                 .hotkey_registered
         })
         .unwrap_or(false);
-    let changed = candidate.hotkey != previous.hotkey
-        || candidate.show_console_hotkey != previous.show_console_hotkey
-        || !was_registered;
-    if changed {
-        if let Err(error) = register_configured_hotkeys(owner, &candidate) {
-            let restored = register_configured_hotkeys(owner, &previous).is_ok();
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.hotkey_registered = restored;
-            }
-            return Err(error);
+    let mut hotkeys = HostHotkeys { owner };
+    let mut startup = HostStartup;
+    let mut persisted = HostSettings;
+    let mut ports = ApplyPorts {
+        hotkeys: &mut hotkeys,
+        startup: &mut startup,
+        settings: &mut persisted,
+    };
+    if let Err(failure) = apply_transaction(&candidate, &previous, was_registered, &mut ports) {
+        if let Some(state) = APP_STATE.get() {
+            let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
+            state.hotkey_registered = failure.hotkey_registered_after(was_registered);
         }
-    }
-
-    if let Err(error) = set_autostart(candidate.start_at_login) {
-        if changed {
-            let restored = register_configured_hotkeys(owner, &previous).is_ok();
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.hotkey_registered = restored;
-            }
-        }
-        return Err(error);
-    }
-    if let Err(error) = save_settings(&candidate) {
-        let _ = set_autostart(previous.start_at_login);
-        if changed {
-            let restored = register_configured_hotkeys(owner, &previous).is_ok();
-            if let Some(state) = APP_STATE.get() {
-                let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-                state.hotkey_registered = restored;
-            }
-        }
-        return Err(error);
+        return Err(AppError::Settings(failure.user_message()));
     }
 
     if let Some(state) = APP_STATE.get() {
@@ -2257,6 +1899,32 @@ unsafe fn apply_settings(owner: HWND, candidate: Settings) -> Result<(), AppErro
         let _ = send_ui_event(HostEvent::StateChanged(snapshot));
     }
     Ok(())
+}
+
+struct HostHotkeys {
+    owner: HWND,
+}
+
+impl HotkeyPort for HostHotkeys {
+    fn register(&mut self, settings: &Settings) -> Result<(), AppError> {
+        unsafe { register_configured_hotkeys(self.owner, settings) }
+    }
+}
+
+struct HostStartup;
+
+impl StartupPort for HostStartup {
+    fn set_enabled(&mut self, enabled: bool) -> Result<(), AppError> {
+        set_autostart(enabled)
+    }
+}
+
+struct HostSettings;
+
+impl SettingsPort for HostSettings {
+    fn persist(&mut self, settings: &Settings) -> Result<(), AppError> {
+        save_settings(settings)
+    }
 }
 
 unsafe fn register_configured_hotkeys(hwnd: HWND, settings: &Settings) -> Result<(), AppError> {
@@ -2454,7 +2122,7 @@ fn settings_toggle_presentation() -> (&'static str, bool) {
     {
         return ("只读兼容模式", false);
     }
-    if state.busy {
+    if state.intent.is_busy() {
         return ("正在切换...", false);
     }
     match &state.hdr {

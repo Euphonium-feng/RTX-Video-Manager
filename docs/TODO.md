@@ -78,6 +78,19 @@
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
   approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
   optimization rather than a blocker for visual acceptance.
+- GitHub Actions run `44930387784` is green for commit `ebcd748` on
+  `codex/deepen-host-orchestration`. Format, Clippy with all targets, tests, both
+  release builds, packaging, and upload passed. This verifies the host intent
+  lifecycle refactor, not a refreshed manual acceptance matrix.
+- GitHub Actions run `44933779385` is green for commit `1be4844` on the same branch.
+  Format, Clippy with all targets, tests, both release builds, packaging, and upload
+  passed. This verifies the console session-state extraction.
+- GitHub Actions run `44935368769` is green for commit `ce87bce` on the same branch.
+  Format, Clippy with all targets, tests, both release builds, packaging, and upload
+  passed. This verifies the compensating settings transaction.
+- GitHub Actions run `44938182591` is green for commit `33ffe7f` on the same branch.
+  Format, Clippy with all targets, tests, both release builds, packaging, and upload
+  passed. This verifies all four architecture candidates together.
 
 ## Verified
 
@@ -212,6 +225,12 @@
 - Verify that tray, shortcut, native overlay, startup entry, single instance,
   Explorer restart, rollback injection, no-HDR-display, Windows-HDR-off, and
   Surround behavior remain unchanged.
+- On the artifact from run `44938182591`, verify console minimize/close, the
+  `Ctrl+Alt+G` open/close cycle, and that closing the console lets the host release
+  and recreate its one-client pipe connection without a stale client.
+- On the same artifact, inject a VSR-only shortcut conflict and confirm startup and
+  persisted settings stay unchanged; then inject a settings write failure after a
+  VSR-only shortcut change and confirm the previous VSR shortcut is registered again.
 - Record host idle memory/CPU, console startup time, console private memory, and both
   executable sizes.
 
@@ -221,6 +240,5 @@
 
 ## Next Action
 
-The requested HDR/VSR spacing work is complete on the 125% reference display. Continue
-the remaining manual acceptance checks at 100% and 150%, then exercise the three
-hotkeys, both toggles, VSR active-state changes, and the clipboard diagnostic action.
+Download the artifact from run `44938182591` and run the manual acceptance checks above,
+starting with console close/reopen and the VSR-only shortcut rollback.

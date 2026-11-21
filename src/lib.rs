@@ -2,6 +2,7 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 pub mod ipc;
+pub mod pipe_handle;
 
 pub const NVCPL_RELATIVE_PATH: &str = r"NVIDIA Corporation\NVIDIA App\NvCpl\nvcpl.dll";
 pub const NVCPL_SHA256_HEX: &str =

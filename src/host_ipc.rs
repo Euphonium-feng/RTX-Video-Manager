@@ -2,21 +2,19 @@ use rtx_video_manager::ipc::{
     decode, read_packet, write_packet, HostEvent, IpcError, UiCommand, UiError, PIPE_NAME,
     PROTOCOL_VERSION,
 };
+use rtx_video_manager::pipe_handle::{PipeHandle, PipeReader, PipeWriter};
 use std::collections::VecDeque;
-use std::io::{self, Read, Write};
+use std::io::Read;
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
-    ERROR_PIPE_NOT_CONNECTED, HANDLE,
-};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE};
 use windows_sys::Win32::Security::{
     EqualSid, GetTokenInformation, TokenUser, PSID, TOKEN_QUERY, TOKEN_USER,
 };
-use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile, PIPE_ACCESS_DUPLEX};
+use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeClientProcessId,
     GetNamedPipeClientSessionId, PeekNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
@@ -138,18 +136,19 @@ fn server_loop() {
 
         crate::log_line("IPC client identity validated");
         set_connection(pipe);
-        let _ = serve_client(pipe);
+        let connection = PipeHandle::new(pipe);
+        let _ = serve_client(&connection);
         clear_connection(pipe);
         unsafe {
             DisconnectNamedPipe(pipe);
-            CloseHandle(pipe);
         }
+        drop(connection);
         post_event(IpcEvent::Disconnected);
     }
 }
 
-fn serve_client(pipe: HANDLE) -> bool {
-    let mut reader = PipeReader(pipe);
+fn serve_client(pipe: &PipeHandle) -> bool {
+    let mut reader = PipeReader::new(pipe);
     let first = read_command(&mut reader);
     let Ok(first) = first else {
         crate::log_line("IPC handshake read failed");
@@ -198,8 +197,16 @@ fn serve_client(pipe: HANDLE) -> bool {
         }
 
         let mut available = 0u32;
-        let peeked =
-            unsafe { PeekNamedPipe(pipe, null_mut(), 0, null_mut(), &mut available, null_mut()) };
+        let peeked = unsafe {
+            PeekNamedPipe(
+                pipe.raw(),
+                null_mut(),
+                0,
+                null_mut(),
+                &mut available,
+                null_mut(),
+            )
+        };
         if peeked == 0 {
             crate::log_line("IPC peek failed; disconnecting");
             return true;
@@ -221,8 +228,8 @@ fn serve_client(pipe: HANDLE) -> bool {
     true
 }
 
-fn write_event(pipe: HANDLE, event: &HostEvent) -> Result<(), IpcError> {
-    write_packet(&mut PipeWriter(pipe), event)
+fn write_event(pipe: &PipeHandle, event: &HostEvent) -> Result<(), IpcError> {
+    write_packet(&mut PipeWriter::new(pipe), event)
 }
 
 fn read_command(reader: &mut impl Read) -> Result<UiCommand, IpcError> {
@@ -332,48 +339,6 @@ fn lock<T>(mutex: &OnceLock<Mutex<T>>) -> std::sync::MutexGuard<'_, T> {
         .unwrap()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
-}
-
-struct PipeReader(HANDLE);
-
-impl Read for PipeReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let mut count = 0u32;
-        let size = buffer.len().min(u32::MAX as usize) as u32;
-        let ok = unsafe { ReadFile(self.0, buffer.as_mut_ptr(), size, &mut count, null_mut()) };
-        if ok == 0 {
-            let error = unsafe { GetLastError() };
-            if matches!(
-                error,
-                ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED
-            ) {
-                return Ok(0);
-            }
-            return Err(io::Error::from_raw_os_error(error as i32));
-        }
-        Ok(count as usize)
-    }
-}
-
-struct PipeWriter(HANDLE);
-
-impl Write for PipeWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        if buffer.is_empty() {
-            return Ok(0);
-        }
-        let mut count = 0u32;
-        let size = buffer.len().min(u32::MAX as usize) as u32;
-        let ok = unsafe { WriteFile(self.0, buffer.as_ptr(), size, &mut count, null_mut()) };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(count as usize)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
 }
 
 fn wide(text: &str) -> Vec<u16> {
