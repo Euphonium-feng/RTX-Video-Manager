@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 
-mod host_ipc;
 mod host_intent;
+mod host_ipc;
 
 use host_intent::{
     vsr_quality_short, Admission, Intent, IntentGate, IntentState, ReadOutcome, WorkerCommand,
@@ -1294,12 +1294,7 @@ unsafe fn submit_intent(hwnd: HWND, intent: Intent) {
     match admission {
         Admission::Ignored => return,
         Admission::Notify(error) => {
-            show_balloon(
-                hwnd,
-                "RTX Video Manager",
-                &error.user_message(),
-                true,
-            );
+            show_balloon(hwnd, "RTX Video Manager", &error.user_message(), true);
             return;
         }
         Admission::UiError(error) => {
@@ -1585,12 +1580,7 @@ unsafe fn handle_worker_events(hwnd: HWND) {
             show_toggle_overlay(&overlay.text, overlay.positive);
         }
         if let Some(notice) = completion.notification {
-            show_balloon(
-                hwnd,
-                "RTX Video Manager",
-                &notice.text,
-                notice.is_error,
-            );
+            show_balloon(hwnd, "RTX Video Manager", &notice.text, notice.is_error);
         }
         if let Some(error) = completion.ui_error {
             send_ui_error(error);

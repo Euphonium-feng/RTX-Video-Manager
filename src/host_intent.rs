@@ -595,7 +595,11 @@ mod tests {
             Some(first.notification.as_ref().unwrap().text.as_str()),
         );
         assert!(same.notification.is_none());
-        let muted = state.complete(&read_event(Some(AppError::ApiFailed("get", 2))), false, None);
+        let muted = state.complete(
+            &read_event(Some(AppError::ApiFailed("get", 2))),
+            false,
+            None,
+        );
         assert!(muted.notification.is_none());
     }
 
@@ -628,13 +632,8 @@ mod tests {
         );
         assert_eq!(completion.remember_vsr_quality, Some(VsrQuality::Level4));
         assert_eq!(
-            completion
-                .overlay
-                .as_ref()
-                .map(|overlay| overlay.positive),
+            completion.overlay.as_ref().map(|overlay| overlay.positive),
             Some(true)
         );
     }
 }
-
-
