@@ -1491,10 +1491,12 @@ unsafe fn handle_worker_events(hwnd: HWND) {
     for event in events {
         let (completion, settings_to_save) = if let Some(shared) = APP_STATE.get() {
             let mut state = shared.lock().unwrap_or_else(|p| p.into_inner());
+            let notifications_enabled = state.settings.notifications;
+            let previous_error = state.last_error.clone();
             let completion = state.intent.complete(
                 &event,
-                state.settings.notifications,
-                state.last_error.as_deref(),
+                notifications_enabled,
+                previous_error.as_deref(),
             );
             match &event {
                 WorkerEvent::Read(Ok(outcome)) => {

@@ -340,6 +340,7 @@ impl IntentState {
                         refresh_tray: true,
                         refresh_settings_button: true,
                         broadcast_snapshot: true,
+                        ..Completion::default()
                     }
                 }
             },
