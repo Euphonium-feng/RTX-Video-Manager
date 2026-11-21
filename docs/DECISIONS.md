@@ -242,3 +242,18 @@ expression.
 Rejected: MIT-only, which has lower legal overhead but no explicit patent grant;
 Apache-2.0-only, which is less approachable for small users; and copyleft licensing,
 which would impose reciprocal source obligations on derivative desktop forks.
+
+## ADR-019: One host intent lifecycle for HDR and VSR writes
+
+Route tray, hotkey, IPC, and legacy-window HDR/VSR write intents through
+`src/host_intent.rs`. The module owns the gate snapshot, the single busy slot,
+per-feature 300 ms toggle debounce, admission outcomes, and the result policy that
+produces toast, overlay, dialog, snapshot, and remembered-quality effects. Win32
+message handlers supply state, dispatch accepted commands, and apply the returned
+state patch; they do not re-implement admission or busy release.
+
+Rejected: a generic transaction combinator over the HDR and VSR transport traits.
+The two families differ in read count and verification fields, so a shared runner
+would require verification and recovery closures in its interface. Instead the
+transaction functions stay in `src/lib.rs`, where their two transport adapters and
+tests remain local, and the host lifecycle owns only commands and effects.

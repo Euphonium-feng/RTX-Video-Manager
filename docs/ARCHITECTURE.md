@@ -13,6 +13,11 @@ access; the GPUI process is a transient, unprivileged view over a local IPC cont
   write/readback/rollback transactions, and unit-testable transport abstractions.
 - `src/main.rs`: Win32 application entry, hidden message window, tray icon, global
   hotkey, native overlay, registry integration, NVIDIA worker, and console lifecycle.
+- `src/host_intent.rs`: pure host intent lifecycle. It owns admission rules for HDR
+  and VSR writes, the single busy slot, per-feature toggle debounce, and the
+  notification/overlay/dialog policy for worker completions. The Win32 message loop
+  supplies a gate snapshot, dispatches accepted commands, and applies the returned
+  state patch and completion effects.
 - `src/host_ipc.rs`: local named-pipe server, same-user/session validation, command
   queue, and snapshot/event writer. A single connection thread owns every pipe read
   and write; the host main thread only enqueues outbound events.
@@ -42,31 +47,36 @@ access; the GPUI process is a transient, unprivileged view over a local IPC cont
 6. An exact hash match becomes `WritableVerified`. A different hash becomes
    `ReadOnlyUnknownBuild` only after signature, signer, export, UXD, and read-probe
    success; any prerequisite failure closes the backend.
-7. HDR toggle requests read `0x318`, change only the enabled field, write, commit with
+7. Write intents pass through `host_intent` before reaching the worker. A read-only
+   gate notifies without dispatch, a busy worker or a 300 ms duplicate toggle is
+   ignored, and only an admitted intent occupies the single busy slot. VSR quality
+   chosen while VSR is off updates only the remembered next-enable value and never
+   enters the busy state.
+8. HDR toggle requests read `0x318`, change only the enabled field, write, commit with
    `NvCplApiExecute(0x10000, 0, -1)`, read back, and restore the original bytes on
    failure. Tuning requests use the same transaction for peak, middle gray, contrast,
    and saturation, then verify all four readback fields plus unchanged enable state
    and display limits.
-8. VSR toggle and quality requests read both `0x315` and `0x317`. They write only the
+9. VSR toggle and quality requests read both `0x315` and `0x317`. They write only the
    4-byte `0x317` quality, commit with `NvCplApiExecute`, verify quality plus fixed
    support fields, and restore plus recommit the previous value on failure. Disabled
    VSR is quality `0`; re-enabling restores the most recent non-zero quality.
-9. Both backend write methods reject every write before calling NvCpl when the
+10. Both backend write methods reject every write before calling NvCpl when the
    compatibility mode is read-only. The host also rejects tray, hotkey, IPC, and
    legacy-window HDR/VSR write intents before queueing them.
-10. Worker results return to the tray through posted window messages and are also
+11. Worker results return to the tray through posted window messages and are also
     published as complete unified snapshots to a connected console.
-11. Interactive launches spawn the console; `--background` launches only the
+12. Interactive launches spawn the console; `--background` launches only the
    tray so the current-user startup entry stays silent.
-12. Successful toggles show a non-activating, topmost overlay at the bottom center
+13. Successful toggles show a non-activating, topmost overlay at the bottom center
     of the active monitor for 500 ms at 50% opacity. The text identifies HDR or VSR
     and includes the VSR quality when relevant.
-13. `Ctrl+Alt+H` toggles HDR, `Ctrl+Alt+V` toggles VSR, and `Ctrl+Alt+G` sends a
+14. `Ctrl+Alt+H` toggles HDR, `Ctrl+Alt+V` toggles VSR, and `Ctrl+Alt+G` sends a
     visibility toggle to the console
     when connected; an active console closes itself, while a background or absent
     console is opened and foregrounded. All three shortcuts are registered as one
     rollback-safe group.
-14. Closing the console exits `RtxVideoManagerConsole.exe`; the host, tray, hotkeys,
+15. Closing the console exits `RtxVideoManagerConsole.exe`; the host, tray, hotkeys,
     and last HDR/VSR states remain active.
 
 ## Compatibility Diagnostics

@@ -2,6 +2,10 @@
 
 ## In Progress
 
+- Deepen the host around a pure intent lifecycle. `src/host_intent.rs` now owns
+  admission, the single busy slot, toggle debounce, and worker completion effects;
+  `src/main.rs` dispatches and applies state patches. Cloud verification of this
+  first candidate is pending.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -221,6 +225,5 @@
 
 ## Next Action
 
-The requested HDR/VSR spacing work is complete on the 125% reference display. Continue
-the remaining manual acceptance checks at 100% and 150%, then exercise the three
-hotkeys, both toggles, VSR active-state changes, and the clipboard diagnostic action.
+Commit and push the host intent lifecycle, then watch the GitHub Actions build to green.
+After that, continue with the console session-state candidate in the agreed order.
