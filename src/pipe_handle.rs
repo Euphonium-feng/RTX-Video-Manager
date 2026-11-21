@@ -6,6 +6,10 @@ use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile};
 
 pub struct PipeHandle(HANDLE);
 
+// A named-pipe handle is moved to the single thread that owns all I/O for the
+// connection. Ownership is never shared; the handle closes exactly once.
+unsafe impl Send for PipeHandle {}
+
 impl PipeHandle {
     pub fn new(handle: HANDLE) -> Self {
         Self(handle)
