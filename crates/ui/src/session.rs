@@ -3,10 +3,8 @@ use rtx_video_manager::{HdrAdjustments, Settings, VsrQuality};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionEvent {
-    Disconnected,
     Snapshot,
     StateChanged,
-    CommandRejected,
     SettingsSaved,
 }
 
@@ -79,11 +77,6 @@ impl SessionState {
 
     pub fn begin_settings_save(&mut self) {
         self.saving = true;
-    }
-
-    pub fn settings_save_completed(&mut self) {
-        self.saving = false;
-        self.dirty = false;
     }
 
     pub fn draft_mut(&mut self) -> &mut Settings {
@@ -243,7 +236,6 @@ mod tests {
     fn snapshot_does_not_clobber_dirty_draft() {
         let mut state = SessionState::default();
         state.apply_snapshot(snapshot(Settings::default()), false);
-        state.begin_settings_save();
         let mut edited = state.draft().clone();
         edited.notifications = false;
         *state.draft_mut() = edited.clone();
@@ -261,8 +253,10 @@ mod tests {
     #[test]
     fn clean_snapshot_replaces_draft() {
         let mut state = SessionState::default();
-        let mut incoming = Settings::default();
-        incoming.start_at_login = false;
+        let incoming = Settings {
+            start_at_login: false,
+            ..Settings::default()
+        };
         state.apply_snapshot(snapshot(incoming.clone()), false);
         assert_eq!(state.draft(), &incoming);
     }
@@ -271,8 +265,10 @@ mod tests {
     fn reconnect_preserves_unsaved_draft_explicitly() {
         let mut state = SessionState::default();
         state.apply_snapshot(snapshot(Settings::default()), false);
-        let mut edited = Settings::default();
-        edited.notifications = false;
+        let edited = Settings {
+            notifications: false,
+            ..Settings::default()
+        };
         *state.draft_mut() = edited.clone();
         state.mark_settings_dirty();
         state.disconnect();
@@ -314,9 +310,7 @@ mod tests {
     #[test]
     fn tuning_save_is_confirmed_only_after_busy_clears() {
         let mut state = SessionState::default();
-        let mut initial = snapshot(Settings::default());
-        initial.busy = None;
-        state.apply_snapshot(initial, false);
+        state.apply_snapshot(snapshot(Settings::default()), false);
         let defaults = state.reset_hdr_draft().unwrap();
         let dirty = HdrAdjustments {
             peak_brightness: defaults.peak_brightness - 100,
@@ -351,8 +345,10 @@ mod tests {
     fn rejected_command_ends_pending_state_without_clearing_draft() {
         let mut state = SessionState::default();
         state.apply_snapshot(snapshot(Settings::default()), false);
-        let mut edited = Settings::default();
-        edited.notifications = false;
+        let edited = Settings {
+            notifications: false,
+            ..Settings::default()
+        };
         *state.draft_mut() = edited.clone();
         state.mark_settings_dirty();
         state.begin_settings_save();
