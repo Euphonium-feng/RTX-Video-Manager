@@ -47,10 +47,7 @@ impl Read for PipeReader {
         };
         if ok == 0 {
             let error = unsafe { GetLastError() };
-            if matches!(
-                error,
-                ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED
-            ) {
+            if pipe_error_is_eof(error) {
                 return Ok(0);
             }
             return Err(io::Error::from_raw_os_error(error as i32));
@@ -92,6 +89,13 @@ impl Write for PipeWriter {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+fn pipe_error_is_eof(error: u32) -> bool {
+    matches!(
+        error,
+        ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED
+    )
 }
 
 #[cfg(test)]
@@ -141,11 +145,4 @@ mod tests {
         };
         assert_eq!(ok, 0);
     }
-}
-
-fn pipe_error_is_eof(error: u32) -> bool {
-    matches!(
-        error,
-        ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED
-    )
 }
