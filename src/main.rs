@@ -9,9 +9,7 @@ use host_intent::{
     WorkerEvent,
 };
 use host_ipc::IpcEvent;
-use host_settings::{
-    apply_transaction, ApplyPorts, HotkeyPort, SettingsPort, StartupPort,
-};
+use host_settings::{apply_transaction, ApplyPorts, HotkeyPort, SettingsPort, StartupPort};
 use rtx_video_manager::ipc::{
     DiagnosticsInfo, HostEvent, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
 };

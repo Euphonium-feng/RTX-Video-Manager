@@ -57,13 +57,11 @@ pub fn apply_transaction(
     was_registered: bool,
     ports: &mut ApplyPorts<'_>,
 ) -> Result<(), ApplyFailure> {
-    candidate
-        .validate()
-        .map_err(|cause| ApplyFailure {
-            cause,
-            recovery: Recovery::NotNeeded,
-            hotkey_recovery: Recovery::NotNeeded,
-        })?;
+    candidate.validate().map_err(|cause| ApplyFailure {
+        cause,
+        recovery: Recovery::NotNeeded,
+        hotkey_recovery: Recovery::NotNeeded,
+    })?;
 
     let hotkeys_changed = candidate.hotkey != previous.hotkey
         || candidate.vsr_hotkey != previous.vsr_hotkey
