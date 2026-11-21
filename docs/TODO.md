@@ -2,10 +2,9 @@
 
 ## In Progress
 
-- Deepen the host around a pure intent lifecycle. `src/host_intent.rs` now owns
-  admission, the single busy slot, toggle debounce, and worker completion effects;
-  `src/main.rs` dispatches and applies state patches. Cloud verification of this
-  first candidate is pending.
+- Deepen the console around a pure session state. The host intent lifecycle is
+  complete and verified by run `44930387784`; the next candidate in the agreed
+  order moves snapshot/draft/in-flight reconciliation out of the GPUI view.
 - `feature/rtx-video-manager` implements the `RTX Video Manager` rename, HDR/VSR
   dual-function model, protocol version `4`, three-hotkey grouping, the five-page
   GPUI console, and the new dual-channel product icon.
@@ -82,6 +81,10 @@
 - The new host idled at 5.50 MiB private memory. The off-screen GPUI console used
   approximately 133 MiB, above the 120 MiB target; reducing it is a follow-up
   optimization rather than a blocker for visual acceptance.
+- GitHub Actions run `44930387784` is green for commit `ebcd748` on
+  `codex/deepen-host-orchestration`. Format, Clippy with all targets, tests, both
+  release builds, packaging, and upload passed. This verifies the host intent
+  lifecycle refactor, not a refreshed manual acceptance matrix.
 
 ## Verified
 
@@ -225,5 +228,5 @@
 
 ## Next Action
 
-Commit and push the host intent lifecycle, then watch the GitHub Actions build to green.
-After that, continue with the console session-state candidate in the agreed order.
+Implement the console session-state candidate, then push and wait for a green build
+before moving to the settings-apply transaction.

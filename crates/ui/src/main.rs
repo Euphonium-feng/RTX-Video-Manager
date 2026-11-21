@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod ipc_client;
+mod session;
 
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_kit::component::input::{InputEvent, InputState, NumberInput};
@@ -10,6 +11,7 @@ use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar, h_flex, 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
+use session::{SessionEvent, SessionState};
 use rtx_video_manager::ipc::{
     HostEvent, UiBusyKind, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
 };
@@ -61,16 +63,9 @@ enum TuningSource {
 }
 
 struct ConsoleApp {
-    snapshot: Option<UiSnapshot>,
-    draft: Settings,
-    hdr_draft: Option<HdrAdjustments>,
-    hdr_dirty: bool,
-    vsr_choice: VsrQuality,
-    tuning_saving: bool,
+    session: SessionState,
     page: UiPage,
     recording: Option<HotkeyField>,
-    saving: bool,
-    dirty: bool,
     connection_error: Option<String>,
     transient_error: Option<String>,
     saved_note: Option<String>,
@@ -103,16 +98,9 @@ impl ConsoleApp {
         let saturation_input =
             cx.new(|cx| InputState::new(window, cx).step(1.).min(-100.).max(100.));
         let mut app = Self {
-            snapshot: None,
-            draft: Settings::default(),
-            hdr_draft: None,
-            hdr_dirty: false,
-            vsr_choice: VsrQuality::Auto,
-            tuning_saving: false,
+            session: SessionState::default(),
             page: UiPage::Overview,
             recording: None,
-            saving: false,
-            dirty: false,
             connection_error: None,
             transient_error: None,
             saved_note: None,
@@ -251,8 +239,7 @@ impl ConsoleApp {
                 log_line(&format!("console disconnected: {message}"));
                 self.connection_error = Some(message);
                 self.recording = None;
-                self.saving = false;
-                self.tuning_saving = false;
+                self.session.disconnect();
             }
             ClientEvent::Event(event) => match *event {
                 HostEvent::Hello { .. } => {}
@@ -260,20 +247,10 @@ impl ConsoleApp {
                     self.apply_snapshot(snapshot, window, cx);
                 }
                 HostEvent::StateChanged(snapshot) => {
-                    if self.tuning_saving && snapshot.busy != Some(UiBusyKind::HdrTuning) {
-                        self.tuning_saving = false;
-                        self.hdr_dirty = false;
-                    }
-                    if self.saving && snapshot.busy.is_none() {
-                        self.dirty = false;
-                        self.saving = false;
-                        self.saved_note = Some("设置已保存".into());
-                    }
                     self.apply_snapshot(snapshot, window, cx);
                 }
                 HostEvent::Error(UiError { message, critical }) => {
-                    self.saving = false;
-                    self.tuning_saving = false;
+                    self.session.reject_command();
                     self.transient_error = Some(message.clone());
                     if critical {
                         self.connection_error = Some(message);
@@ -309,24 +286,13 @@ impl ConsoleApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.dirty && self.recording.is_none() {
-            self.draft = snapshot.settings.clone();
+        let event = self
+            .session
+            .apply_snapshot(snapshot, self.recording.is_some());
+        if event == SessionEvent::SettingsSaved {
+            self.saved_note = Some("设置已保存".into());
         }
-        let hdr = match &snapshot.hdr {
-            UiHdrState::Ready(hdr) => Some(hdr.clone()),
-            _ => None,
-        };
-        if snapshot.busy != Some(UiBusyKind::VsrQuality) {
-            self.vsr_choice = match &snapshot.vsr {
-                UiVsrState::Ready(vsr) if vsr.enabled => vsr.quality,
-                _ => snapshot.settings.last_vsr_quality,
-            };
-        }
-        self.snapshot = Some(snapshot);
-        if !self.hdr_dirty && !self.tuning_saving {
-            self.hdr_draft = hdr.as_ref().map(HdrAdjustments::from_snapshot);
-            self.sync_tuning_controls(window, cx);
-        }
+        self.sync_tuning_controls(window, cx);
     }
 
     fn reconnect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -360,10 +326,10 @@ impl ConsoleApp {
     }
 
     fn choose_vsr_quality(&mut self, quality: VsrQuality, cx: &mut Context<Self>) {
-        if self.vsr_choice == quality {
+        if self.session.vsr_choice() == quality {
             return;
         }
-        self.vsr_choice = quality;
+        self.session.set_vsr_choice(quality);
         self.transient_error = None;
         self.saved_note = None;
         self.send(UiCommand::SetVsrQuality { quality }, cx);
@@ -403,10 +369,13 @@ impl ConsoleApp {
         }
         match hotkey_from_keystroke(&event.keystroke) {
             Ok(hotkey) => {
-                let (first, second) = match target {
-                    HotkeyField::Hdr => (self.draft.vsr_hotkey, self.draft.show_console_hotkey),
-                    HotkeyField::Vsr => (self.draft.hotkey, self.draft.show_console_hotkey),
-                    HotkeyField::Console => (self.draft.hotkey, self.draft.vsr_hotkey),
+                let (first, second) = {
+                    let draft = self.session.draft();
+                    match target {
+                        HotkeyField::Hdr => (draft.vsr_hotkey, draft.show_console_hotkey),
+                        HotkeyField::Vsr => (draft.hotkey, draft.show_console_hotkey),
+                        HotkeyField::Console => (draft.hotkey, draft.vsr_hotkey),
+                    }
                 };
                 if hotkey == first || hotkey == second {
                     self.transient_error = Some("三个快捷键不能相同。".into());
@@ -414,12 +383,14 @@ impl ConsoleApp {
                     return;
                 }
                 match target {
-                    HotkeyField::Hdr => self.draft.hotkey = hotkey,
-                    HotkeyField::Vsr => self.draft.vsr_hotkey = hotkey,
-                    HotkeyField::Console => self.draft.show_console_hotkey = hotkey,
+                    HotkeyField::Hdr => self.session.draft_mut().hotkey = hotkey,
+                    HotkeyField::Vsr => self.session.draft_mut().vsr_hotkey = hotkey,
+                    HotkeyField::Console => {
+                        self.session.draft_mut().show_console_hotkey = hotkey;
+                    }
                 }
                 self.recording = None;
-                self.dirty = true;
+                self.session.mark_settings_dirty();
                 self.transient_error = None;
                 self.send(UiCommand::EndHotkeyCapture, cx);
             }
@@ -479,7 +450,7 @@ impl ConsoleApp {
             TuningField::MiddleGray => value.clamp(0, 100),
             TuningField::Contrast | TuningField::Saturation => value.clamp(-100, 100),
         };
-        let Some(draft) = self.hdr_draft.as_mut() else {
+        let Some(mut draft) = self.session.hdr_adjustments() else {
             return;
         };
         match field {
@@ -488,7 +459,7 @@ impl ConsoleApp {
             TuningField::Contrast => draft.contrast = value,
             TuningField::Saturation => draft.saturation = value,
         }
-        self.hdr_dirty = *draft != HdrAdjustments::from_snapshot(&hdr);
+        self.session.update_hdr_draft(draft);
         self.write_tuning_control(field, value, &hdr, source, window, cx);
         self.saved_note = None;
         cx.notify();
@@ -537,7 +508,7 @@ impl ConsoleApp {
         let Some(hdr) = self.hdr_ready().cloned() else {
             return;
         };
-        let Some(draft) = self.hdr_draft.clone() else {
+        let Some(draft) = self.session.hdr_adjustments() else {
             return;
         };
         for (field, value) in [
@@ -569,33 +540,33 @@ impl ConsoleApp {
     }
 
     fn set_startup(&mut self, value: bool, cx: &mut Context<Self>) {
-        if self.draft.start_at_login != value {
-            self.draft.start_at_login = value;
-            self.dirty = true;
+        if self.session.draft().start_at_login != value {
+            self.session.draft_mut().start_at_login = value;
+            self.session.mark_settings_dirty();
             self.saved_note = None;
             cx.notify();
         }
     }
 
     fn set_notifications(&mut self, value: bool, cx: &mut Context<Self>) {
-        if self.draft.notifications != value {
-            self.draft.notifications = value;
-            self.dirty = true;
+        if self.session.draft().notifications != value {
+            self.session.draft_mut().notifications = value;
+            self.session.mark_settings_dirty();
             self.saved_note = None;
             cx.notify();
         }
     }
 
     fn reset_defaults(&mut self, cx: &mut Context<Self>) {
-        self.draft = Settings::default();
-        self.vsr_choice = if self.vsr_ready().is_some_and(|vsr| vsr.enabled) {
+        self.session.reset_draft();
+        let choice = if self.vsr_ready().is_some_and(|vsr| vsr.enabled) {
             self.vsr_ready()
                 .map(|vsr| vsr.quality)
                 .unwrap_or(VsrQuality::Auto)
         } else {
             VsrQuality::Auto
         };
-        self.dirty = true;
+        self.session.set_vsr_choice(choice);
         self.saved_note = None;
         self.transient_error = None;
         cx.notify();
@@ -605,20 +576,17 @@ impl ConsoleApp {
         if self.recording.is_some() {
             return;
         }
-        self.saving = true;
+        self.session.begin_settings_save();
         log_line("console requested settings save");
         self.saved_note = None;
         self.transient_error = None;
-        let settings = self.draft.clone();
+        let settings = self.session.draft().clone();
         self.send(UiCommand::ApplySettings { settings }, cx);
         cx.notify();
     }
 
     fn reset_tuning(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(hdr) = self.hdr_ready().cloned() {
-            let defaults = HdrAdjustments::defaults_for(&hdr);
-            self.hdr_dirty = defaults != HdrAdjustments::from_snapshot(&hdr);
-            self.hdr_draft = Some(defaults);
+        if self.session.reset_hdr_draft().is_some() {
             self.transient_error = None;
             self.sync_tuning_controls(window, cx);
             cx.notify();
@@ -626,13 +594,12 @@ impl ConsoleApp {
     }
 
     fn save_tuning(&mut self, cx: &mut Context<Self>) {
-        let Some(adjustments) = self.hdr_draft.clone() else {
-            return;
-        };
-        if !self.hdr_dirty || !self.can_tune() {
+        if !self.can_tune() {
             return;
         }
-        self.tuning_saving = true;
+        let Some(adjustments) = self.session.begin_tuning_save() else {
+            return;
+        };
         self.transient_error = None;
         self.saved_note = None;
         log_line("console requested HDR tuning");
@@ -641,21 +608,16 @@ impl ConsoleApp {
     }
 
     fn hdr_ready(&self) -> Option<&rtx_video_manager::HdrSnapshot> {
-        match self.snapshot.as_ref().map(|snapshot| &snapshot.hdr) {
-            Some(UiHdrState::Ready(hdr)) => Some(hdr),
-            _ => None,
-        }
+        self.session.hdr_snapshot()
     }
 
     fn vsr_ready(&self) -> Option<&VsrSnapshot> {
-        match self.snapshot.as_ref().map(|snapshot| &snapshot.vsr) {
-            Some(UiVsrState::Ready(vsr)) => Some(vsr),
-            _ => None,
-        }
+        self.session.vsr_ready()
     }
 
     fn compatibility(&self) -> Option<&CompatibilityInfo> {
-        self.snapshot
+        self.session
+            .snapshot()
             .as_ref()
             .and_then(|snapshot| snapshot.diagnostics.compatibility.as_ref())
     }
@@ -671,7 +633,7 @@ impl ConsoleApp {
     }
 
     fn busy_kind(&self) -> Option<UiBusyKind> {
-        self.snapshot.as_ref().and_then(|snapshot| snapshot.busy)
+        self.session.busy_kind()
     }
 
     fn busy(&self) -> bool {
@@ -711,8 +673,8 @@ impl ConsoleApp {
     }
 
     fn diagnostic_text(&self) -> String {
-        self.snapshot
-            .as_ref()
+        self.session
+            .snapshot()
             .map(format_diagnostic_text)
             .unwrap_or_else(|| "RTX Video Manager diagnostics\napp_version=unknown".into())
     }
@@ -725,7 +687,7 @@ impl ConsoleApp {
         if let Some(error) = &self.connection_error {
             return ("后台连接已断开".into(), error.clone(), "○ 已断线".into());
         }
-        match self.snapshot.as_ref().map(|snapshot| &snapshot.hdr) {
+        match self.session.hdr_state() {
             None | Some(UiHdrState::Loading) => (
                 "正在读取 HDR 状态".into(),
                 "正在连接 NVIDIA 显示设置服务".into(),
@@ -789,7 +751,7 @@ impl ConsoleApp {
                 "○ 已断线".into(),
             );
         }
-        match self.snapshot.as_ref().map(|snapshot| &snapshot.vsr) {
+        match self.session.vsr_state() {
             None | Some(UiVsrState::Loading) => (
                 "正在读取 VSR 状态".into(),
                 "正在连接 NVIDIA 视频增强服务".into(),
@@ -831,7 +793,7 @@ impl ConsoleApp {
                 } else {
                     (
                         "RTX VSR 已关闭".into(),
-                        format!("下次启用使用 {} 档", quality_label(self.vsr_choice)),
+                        format!("下次启用使用 {} 档", quality_label(self.session.vsr_choice())),
                         "○ 已关闭".into(),
                     )
                 }
@@ -1041,7 +1003,7 @@ impl ConsoleApp {
                                     .font_family("Cascadia Mono")
                                     .text_size(px(9.))
                                     .text_color(rgb(MUTED))
-                                    .child(format_hotkey(self.draft.hotkey)),
+                                    .child(format_hotkey(self.session.draft().hotkey)),
                             )
                             .child(div().text_size(px(9.)).text_color(rgb(SUBTLE)).child(
                                 if read_only {
@@ -1060,7 +1022,7 @@ impl ConsoleApp {
         let enabled = self.vsr_ready().is_some_and(|vsr| vsr.enabled);
         let can_toggle = self.can_toggle_vsr();
         let read_only = self.compatibility_read_only();
-        let quality = self.vsr_ready().map_or(self.vsr_choice, |vsr| vsr.quality);
+        let quality = self.vsr_ready().map_or(self.session.vsr_choice(), |vsr| vsr.quality);
         let active_quality = self
             .vsr_ready()
             .and_then(|vsr| vsr.active_quality)
@@ -1206,7 +1168,7 @@ impl ConsoleApp {
                                     .font_family("Cascadia Mono")
                                     .text_size(px(9.))
                                     .text_color(rgb(MUTED))
-                                    .child(format_hotkey(self.draft.vsr_hotkey)),
+                                    .child(format_hotkey(self.session.draft().vsr_hotkey)),
                             )
                             .child(div().text_size(px(9.)).text_color(rgb(SUBTLE)).child(
                                 if read_only {
@@ -1257,9 +1219,9 @@ impl ConsoleApp {
             .unwrap_or("VSR 读取中");
         let hotkeys = format!(
             "H {} · V {} · G {}",
-            format_hotkey(self.draft.hotkey),
-            format_hotkey(self.draft.vsr_hotkey),
-            format_hotkey(self.draft.show_console_hotkey)
+            format_hotkey(self.session.draft().hotkey),
+            format_hotkey(self.session.draft().vsr_hotkey),
+            format_hotkey(self.session.draft().show_console_hotkey)
         );
 
         h_flex()
@@ -1397,7 +1359,7 @@ impl ConsoleApp {
         let primary_hint = if read_only {
             "当前 NVIDIA 构建仅支持读取".to_string()
         } else {
-            format!("HDR {}", format_hotkey(self.draft.hotkey))
+            format!("HDR {}", format_hotkey(self.session.draft().hotkey))
         };
 
         let toggle_style = ButtonCustomVariant::new(cx)
@@ -1706,7 +1668,7 @@ impl ConsoleApp {
                             .child(if read_only {
                                 "当前 NVIDIA 构建仅支持读取".into()
                             } else {
-                                format!("切换 {}", format_hotkey(self.draft.vsr_hotkey))
+                                format!("切换 {}", format_hotkey(self.session.draft().vsr_hotkey))
                             }),
                     ),
             )
@@ -1767,7 +1729,7 @@ impl ConsoleApp {
                                 } else {
                                     "下次启用"
                                 },
-                                quality_label(self.vsr_choice)
+                                quality_label(self.session.vsr_choice())
                             )),
                     ),
             )
@@ -1792,7 +1754,7 @@ impl ConsoleApp {
                     ]
                     .into_iter()
                     .map(|quality| {
-                        let selected = self.vsr_choice == quality;
+                        let selected = self.session.vsr_choice() == quality;
                         div()
                             .w(px(78.))
                             .h(px(38.))
@@ -2029,7 +1991,7 @@ impl ConsoleApp {
     ) -> impl IntoElement {
         let input = self.tuning_input(field);
         let slider = self.tuning_slider(field);
-        let enabled = self.can_tune() && !self.tuning_saving;
+        let enabled = self.can_tune() && !self.session.tuning_saving();
         let unavailable_opacity = if enabled { 1.0 } else { 0.45 };
         v_flex()
             .flex_1()
@@ -2086,7 +2048,7 @@ impl ConsoleApp {
                 hdr.peak_brightness
             )
         });
-        let disabled = !self.hdr_dirty || !self.can_tune() || self.tuning_saving;
+        let disabled = !self.session.hdr_dirty() || !self.can_tune() || self.session.tuning_saving();
 
         v_flex()
             .w_full()
@@ -2097,7 +2059,7 @@ impl ConsoleApp {
             .p_4()
             .rounded(px(14.))
             .border_1()
-            .border_color(if self.hdr_dirty { rgb(WARM) } else { rgb(RULE) })
+            .border_color(if self.session.hdr_dirty() { rgb(WARM) } else { rgb(RULE) })
             .bg(rgb(PANEL))
             .child(
                 h_flex()
@@ -2118,7 +2080,7 @@ impl ConsoleApp {
                             .text_color(rgb(SUBTLE))
                             .child("NVIDIA 0x318 · 独立应用"),
                     )
-                    .when(self.hdr_dirty, |this| {
+                    .when(self.session.hdr_dirty(), |this| {
                         this.child(
                             div()
                                 .px_2()
@@ -2139,7 +2101,7 @@ impl ConsoleApp {
                                     .ghost()
                                     .compact()
                                     .label("还原")
-                                    .disabled(self.tuning_saving || self.hdr_ready().is_none())
+                                    .disabled(self.session.tuning_saving() || self.hdr_ready().is_none())
                                     .on_click(cx.listener(|app, _, window, cx| {
                                         app.reset_tuning(window, cx);
                                     })),
@@ -2154,12 +2116,12 @@ impl ConsoleApp {
                                             .active(rgb(0x51CBD4).into()),
                                     )
                                     .compact()
-                                    .label(if self.tuning_saving {
+                                    .label(if self.session.tuning_saving() {
                                         "写入中…"
                                     } else {
                                         "应用调校"
                                     })
-                                    .loading(self.tuning_saving)
+                                    .loading(self.session.tuning_saving())
                                     .disabled(disabled)
                                     .on_click(cx.listener(|app, _, _, cx| {
                                         app.save_tuning(cx);
@@ -2222,12 +2184,12 @@ impl ConsoleApp {
             .border_1()
             .border_color(rgb(RULE))
             .bg(rgb(PANEL))
-            .child(self.render_hotkey_row(HotkeyField::Hdr, "切换 HDR", self.draft.hotkey, cx))
-            .child(self.render_hotkey_row(HotkeyField::Vsr, "切换 VSR", self.draft.vsr_hotkey, cx))
+            .child(self.render_hotkey_row(HotkeyField::Hdr, "切换 HDR", self.session.draft().hotkey, cx))
+            .child(self.render_hotkey_row(HotkeyField::Vsr, "切换 VSR", self.session.draft().vsr_hotkey, cx))
             .child(self.render_hotkey_row(
                 HotkeyField::Console,
                 "唤起控制台",
-                self.draft.show_console_hotkey,
+                self.session.draft().show_console_hotkey,
                 cx,
             ))
             .child(behavior_row(
@@ -2235,7 +2197,7 @@ impl ConsoleApp {
                 "登录 Windows 时自动启动",
                 "只启动后台托盘，不打开控制台",
                 Switch::new("startup")
-                    .checked(self.draft.start_at_login)
+                    .checked(self.session.draft().start_at_login)
                     .on_change(cx.listener(|app, value, _, cx| {
                         app.set_startup(*value, cx);
                     })),
@@ -2245,7 +2207,7 @@ impl ConsoleApp {
                 "切换时显示系统浮层",
                 "屏幕下方 500 ms 半透明提示",
                 Switch::new("notifications")
-                    .checked(self.draft.notifications)
+                    .checked(self.session.draft().notifications)
                     .on_change(cx.listener(|app, value, _, cx| {
                         app.set_notifications(*value, cx);
                     })),
@@ -2268,7 +2230,10 @@ impl ConsoleApp {
     fn render_diagnostics(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let hdr = self.hdr_ready();
         let vsr = self.vsr_ready();
-        let diagnostics = self.snapshot.as_ref().map(|snapshot| &snapshot.diagnostics);
+        let diagnostics = self
+            .session
+            .snapshot()
+            .map(|snapshot| &snapshot.diagnostics);
         let compatibility = diagnostics.and_then(|value| value.compatibility.as_ref());
         let compatibility_text = compatibility
             .map(|value| {
@@ -2419,8 +2384,8 @@ impl ConsoleApp {
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let save_disabled = !self.dirty
-            || self.saving
+        let save_disabled = !self.session.dirty()
+            || self.session.saving()
             || self.recording.is_some()
             || self.connection_error.is_some();
         let connection = if self.connection_error.is_some() {
@@ -2483,12 +2448,12 @@ impl ConsoleApp {
                                         .hover(rgb(SIGNAL_HOVER).into())
                                         .active(rgb(0x51CBD4).into()),
                                 )
-                                .label(if self.saving {
+                                .label(if self.session.saving() {
                                     "保存中…"
                                 } else {
                                     "保存更改"
                                 })
-                                .loading(self.saving)
+                                .loading(self.session.saving())
                                 .disabled(save_disabled)
                                 .on_click(cx.listener(|app, _, _, cx| app.save(cx))),
                         )
