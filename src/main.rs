@@ -1493,11 +1493,10 @@ unsafe fn handle_worker_events(hwnd: HWND) {
             let mut state = shared.lock().unwrap_or_else(|p| p.into_inner());
             let notifications_enabled = state.settings.notifications;
             let previous_error = state.last_error.clone();
-            let completion = state.intent.complete(
-                &event,
-                notifications_enabled,
-                previous_error.as_deref(),
-            );
+            let completion =
+                state
+                    .intent
+                    .complete(&event, notifications_enabled, previous_error.as_deref());
             match &event {
                 WorkerEvent::Read(Ok(outcome)) => {
                     log_line("NVIDIA state read completed");
