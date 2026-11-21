@@ -14,7 +14,6 @@ impl PipeHandle {
     pub fn raw(&self) -> HANDLE {
         self.0
     }
-
 }
 
 impl Drop for PipeHandle {
