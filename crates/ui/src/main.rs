@@ -11,7 +11,6 @@ use gpui_kit::component::{Disableable as _, Theme, ThemeMode, TitleBar, h_flex, 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use ipc_client::{ClientEvent, IpcClient};
-use session::{SessionEvent, SessionState};
 use rtx_video_manager::ipc::{
     HostEvent, UiBusyKind, UiCommand, UiError, UiHdrState, UiPage, UiSnapshot, UiVsrState,
 };
@@ -19,6 +18,7 @@ use rtx_video_manager::{
     AppError, CompatibilityInfo, HdrAdjustments, Hotkey, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
     NVCPL_SHA256_HEX, Settings, VsrQuality, VsrSnapshot, format_hotkey,
 };
+use session::{SessionEvent, SessionState};
 use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::ptr::null;
@@ -793,7 +793,10 @@ impl ConsoleApp {
                 } else {
                     (
                         "RTX VSR 已关闭".into(),
-                        format!("下次启用使用 {} 档", quality_label(self.session.vsr_choice())),
+                        format!(
+                            "下次启用使用 {} 档",
+                            quality_label(self.session.vsr_choice())
+                        ),
                         "○ 已关闭".into(),
                     )
                 }
@@ -1022,7 +1025,9 @@ impl ConsoleApp {
         let enabled = self.vsr_ready().is_some_and(|vsr| vsr.enabled);
         let can_toggle = self.can_toggle_vsr();
         let read_only = self.compatibility_read_only();
-        let quality = self.vsr_ready().map_or(self.session.vsr_choice(), |vsr| vsr.quality);
+        let quality = self
+            .vsr_ready()
+            .map_or(self.session.vsr_choice(), |vsr| vsr.quality);
         let active_quality = self
             .vsr_ready()
             .and_then(|vsr| vsr.active_quality)
@@ -2048,7 +2053,8 @@ impl ConsoleApp {
                 hdr.peak_brightness
             )
         });
-        let disabled = !self.session.hdr_dirty() || !self.can_tune() || self.session.tuning_saving();
+        let disabled =
+            !self.session.hdr_dirty() || !self.can_tune() || self.session.tuning_saving();
 
         v_flex()
             .w_full()
@@ -2059,7 +2065,11 @@ impl ConsoleApp {
             .p_4()
             .rounded(px(14.))
             .border_1()
-            .border_color(if self.session.hdr_dirty() { rgb(WARM) } else { rgb(RULE) })
+            .border_color(if self.session.hdr_dirty() {
+                rgb(WARM)
+            } else {
+                rgb(RULE)
+            })
             .bg(rgb(PANEL))
             .child(
                 h_flex()
@@ -2101,7 +2111,9 @@ impl ConsoleApp {
                                     .ghost()
                                     .compact()
                                     .label("还原")
-                                    .disabled(self.session.tuning_saving() || self.hdr_ready().is_none())
+                                    .disabled(
+                                        self.session.tuning_saving() || self.hdr_ready().is_none(),
+                                    )
                                     .on_click(cx.listener(|app, _, window, cx| {
                                         app.reset_tuning(window, cx);
                                     })),
@@ -2184,8 +2196,18 @@ impl ConsoleApp {
             .border_1()
             .border_color(rgb(RULE))
             .bg(rgb(PANEL))
-            .child(self.render_hotkey_row(HotkeyField::Hdr, "切换 HDR", self.session.draft().hotkey, cx))
-            .child(self.render_hotkey_row(HotkeyField::Vsr, "切换 VSR", self.session.draft().vsr_hotkey, cx))
+            .child(self.render_hotkey_row(
+                HotkeyField::Hdr,
+                "切换 HDR",
+                self.session.draft().hotkey,
+                cx,
+            ))
+            .child(self.render_hotkey_row(
+                HotkeyField::Vsr,
+                "切换 VSR",
+                self.session.draft().vsr_hotkey,
+                cx,
+            ))
             .child(self.render_hotkey_row(
                 HotkeyField::Console,
                 "唤起控制台",

@@ -360,5 +360,4 @@ mod tests {
         assert!(!state.saving());
         assert_eq!(state.draft(), &edited);
     }
-
 }
